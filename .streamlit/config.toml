@@ -1,0 +1,8 @@
+# Настройки Streamlit для прототипа.
+[server]
+headless = true          # не спрашивать email при первом запуске; браузер открывает run.bat
+address = "localhost"    # программа доступна только с этого компьютера
+port = 8501
+
+[browser]
+gatherUsageStats = false # не отправлять статистику использования

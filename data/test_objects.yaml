@@ -1,0 +1,153 @@
+# Тестовый набор объектов КИИ с эталонными ответами.
+#
+# Объекты условные (вымышленные), значения показателей подобраны так, чтобы
+# покрыть все категории, граничные значения диапазонов и замечания к тексту ПП № 127.
+#
+# Поля объекта:
+#   sphere             — id сферы из rules/spheres.yaml
+#   indicators         — {номер показателя ПП № 127: значение}; не указан — неприменим
+#   implemented        — какие меры реализованы на объекте (входные данные):
+#       base_category  — взят весь базовый набор этой категории (null — ничего)...
+#       except         — ...кроме этих мер
+#       extra          — плюс меры сверх базового набора
+#   expected_category  — ЭТАЛОН: категория, рассчитанная вручную по Перечню ПП № 127
+#                        (null — категория не присваивается)
+#   expected_missing   — ЭТАЛОН: меры, которые должны попасть в несоответствия
+#   reasoning          — ручной расчёт эталона
+
+objects:
+
+  - id: obj01
+    name: "Медицинская информационная система городской больницы"
+    sphere: healthcare
+    indicators: {"1": 30}
+    implemented: {base_category: 3, except: [АУД.2, ИНЦ.1, ОДТ.4], extra: [ЗИС.17]}
+    expected_category: 3
+    expected_missing: [АУД.2, ИНЦ.1, ОДТ.4]
+    reasoning: "п. 1: 30 чел. ∈ [1; 50] → III. Мера ЗИС.17 вне базового набора на результат не влияет."
+
+  - id: obj02
+    name: "АСУ ТП районной котельной"
+    sphere: energy
+    indicators: {"2а": subject, "2б": 300}
+    implemented: {base_category: 2, except: [СОВ.1, ЗИС.4]}
+    expected_category: 2
+    expected_missing: [СОВ.1, ЗИС.4]
+    reasoning: "п. 2а: выход за пределы МО в пределах субъекта → II; п. 2б: 300 тыс. ∈ [50; 1000) → III. Наивысшая — II."
+
+  - id: obj03
+    name: "Автоматизированная банковская система системно значимого банка"
+    sphere: finance
+    indicators: {"10": 150}
+    implemented: {base_category: 1, except: [АУД.5, АВЗ.5, ЗИС.31]}
+    expected_category: 1
+    expected_missing: [АУД.5, АВЗ.5, ЗИС.31]
+    reasoning: "п. 10: 150 млн > 120 → I."
+
+  - id: obj04
+    name: "АСУ движением поездов метрополитена"
+    sphere: transport
+    indicators: {"3а": mo, "3б": 1000}
+    implemented: {base_category: 2, except: []}
+    expected_category: 2
+    expected_missing: []
+    reasoning: "Граница: п. 3б: 1000 тыс. — «более или равно 1000» → II; п. 3а: территория МО → III. Наивысшая — II. Все меры реализованы."
+
+  - id: obj05
+    name: "Информационная система учёта публикаций НИИ"
+    sphere: science
+    indicators: {}
+    implemented: {base_category: null}
+    expected_category: null
+    expected_missing: []
+    reasoning: "Ни один показатель неприменим → категория не присваивается (п. 6 абз. 3 Правил)."
+
+  - id: obj06
+    name: "Сеть связи сельского района"
+    sphere: telecom
+    indicators: {"1": 0, "4б": 49.9}
+    implemented: {base_category: null}
+    expected_category: null
+    expected_missing: []
+    reasoning: "Граница: п. 4б: 49,9 тыс. < 50 → не соответствует; п. 1: 0 < 1 → не соответствует. Категория не присваивается."
+
+  - id: obj07
+    name: "MES-система металлургического комбината"
+    sphere: metallurgy
+    indicators: {"8": 10}
+    implemented: {base_category: 3, except: [ЗНИ.8]}
+    expected_category: 3
+    expected_missing: [ЗНИ.8]
+    reasoning: "Граница: п. 8: 10% — «более 5, но менее или равно 10» → III (не II, т. к. II — «более 10»)."
+
+  - id: obj08
+    name: "АСУ ТП химического завода"
+    sphere: chemical
+    indicators: {"1": 120, "11а": federal, "11б": 200}
+    implemented: {base_category: 1, except: [ОПС.1, ДНС.4]}
+    expected_category: 1
+    expected_missing: [ОПС.1, ДНС.4]
+    reasoning: "п. 1: 120 ∈ (50; 500] → II; п. 11а: выход за пределы субъекта → I; п. 11б: 200 тыс. → III. Наивысшая — I."
+
+  - id: obj09
+    name: "CRM-система торговой сети"
+    sphere: other
+    indicators: {"1": 5}
+    implemented: {base_category: null}
+    expected_category: null
+    expected_missing: []
+    reasoning: "Сфера не входит в ст. 2 п. 8 187-ФЗ → не субъект КИИ, категорированию не подлежит."
+
+  - id: obj10
+    name: "Информационная система оборонного предприятия"
+    sphere: defense
+    indicators: {"14": 3}
+    implemented: {base_category: 1, except: []}
+    expected_category: 1
+    expected_missing: []
+    reasoning: "Замечание к ПП № 127: п. 14: 3 ч ∈ (2; 4] → III, но также «более 1» → I. По буквальному тексту и п. 6 Правил — I."
+
+  - id: obj11
+    name: "Информационная система администрирования поступлений в федеральный бюджет"
+    sphere: finance
+    indicators: {"9а": 0.01}
+    implemented: {base_category: 2, except: [ИАФ.0]}
+    expected_category: 2
+    expected_missing: [ИАФ.0]
+    reasoning: "Замечание к ПП № 127: п. 9а: 0,01% ∈ (0,001; 0,05] → III и ∈ (0,005; 0,1] → II. Наивысшая — II."
+
+  - id: obj12
+    name: "Региональный портал государственных услуг"
+    sphere: telecom
+    indicators: {"1": 5, "5": 6}
+    implemented: {base_category: 3, except: [ПЛН.1, ИПО.2]}
+    expected_category: 3
+    expected_missing: [ПЛН.1, ИПО.2]
+    reasoning: "Замечание к ПП № 127: п. 5: ровно 6 ч не попадает ни в один диапазон; п. 1: 5 чел. → III. Итог — III."
+
+  - id: obj13
+    name: "Ситуационный центр федеральной госкорпорации"
+    sphere: interaction
+    indicators: {"6": regional, "12": federal}
+    implemented: {base_category: 2, except: [ДНС.3]}
+    expected_category: 2
+    expected_missing: [ДНС.3]
+    reasoning: "п. 12: СЦ госкорпорации → II; п. 6: орган субъекта РФ → III. Наивысшая — II. ДНС.5 для II не обязательна по тексту приложения."
+
+  - id: obj14
+    name: "Система управления скорой медицинской помощью"
+    sphere: healthcare
+    indicators: {"1": 51}
+    implemented: {base_category: 2, except: []}
+    expected_category: 2
+    expected_missing: []
+    reasoning: "Граница: п. 1: 51 чел. — «более 50» → II."
+
+  - id: obj15
+    name: "АСУ ТП магистрального нефтепровода"
+    sphere: fuel_energy
+    indicators: {"11а": subject, "13а": 15}
+    implemented: {base_category: 2, except: [ОДТ.1, ОДТ.2]}
+    expected_category: 2
+    expected_missing: [ОДТ.1, ОДТ.2]
+    reasoning: "п. 11а: в пределах субъекта → II; граница п. 13а: 15% — «менее или равно 15» → II."
