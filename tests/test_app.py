@@ -56,7 +56,7 @@ def checked(at) -> int:
 # ---------------- структура ----------------
 
 def test_starts_with_four_steps(app):
-    assert [t.label.split(" ", 1)[1] for t in app.tabs] == [
+    assert [t.label for t in app.tabs] == [
         "1. Объект и сфера", "2. Показатели значимости", "3. Меры защиты", "4. Отчёт"]
     assert summary_category(app) == "cat0"
     assert not button(app, "Сформировать отчёт").disabled
@@ -147,6 +147,21 @@ def test_report_reacts_to_changes(app):
     button(app, "Сформировать отчёт").click().run()
     app.checkbox(key="m_СОВ.1").check().run()
     assert "Данные изменились" in texts(app.warning)
+
+
+def test_layout_is_stable_while_filling(app):
+    """Регрессия: если название вкладки или заголовок блока меняется при вводе, Streamlit
+    пересоздаёт элемент — вкладка переключается на первую, а блок сворачивается после
+    каждой галочки. Названия должны оставаться неизменными."""
+    def layout(at):
+        return [t.label for t in at.tabs], [e.label for e in at.expander]
+
+    app.number_input(key="ind_1").set_value(30.0).run()   # появляется категория → блоки мер
+    before = layout(app)
+    app.number_input(key="ind_1").set_value(40.0).run()   # другое значение в том же разделе
+    app.checkbox(key="m_ИАФ.0").check().run()              # первая галочка (шаг 3 становится выполненным)
+    app.checkbox(key="m_ИАФ.1").check().run()
+    assert layout(app) == before
 
 
 def test_reset_clears_form(app):

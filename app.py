@@ -46,6 +46,10 @@ CSS = """
 .ref div b {display:block; font-size:.72rem; letter-spacing:.03em; margin-bottom:.1rem;}
 .ref div.hit {opacity:1; border-color:#1f2328;}
 .ref .c3 {background:#fff4c2;} .ref .c2 {background:#ffe8cc;} .ref .c1 {background:#fde2e1;}
+.chips {display:flex; flex-wrap:wrap; gap:.35rem; margin:.2rem 0 .8rem;}
+.chip {padding:.15rem .55rem; border-radius:999px; font-size:.8rem; font-weight:600;}
+.chip.full {background:#dcf2e3; color:#1e6b3a;} .chip.part {background:#ffe8cc; color:#8a4b0f;}
+.chip.none {background:#fde2e1; color:#9b1c1c;}
 .apptitle {font-size:1.9rem; font-weight:700; line-height:1.2;}
 .appsub {font-size:.95rem; opacity:.65; margin:.2rem 0 1rem;}
 </style>
@@ -243,7 +247,9 @@ c4.markdown(f'<div class="card cat0"><div class="label">Соответствие
             unsafe_allow_html=True)
 st.write("")
 
-tab1, tab2, tab3, tab4 = st.tabs([f"{'✅' if ok else '○'} {n}. {t}" for n, (t, ok) in enumerate(steps, 1)])
+# Названия вкладок неизменные: если название меняется (например, появляется галочка «выполнено»),
+# Streamlit пересоздаёт вкладки и переключает на первую. Статус шагов — в боковой панели.
+tab1, tab2, tab3, tab4 = st.tabs([f"{n}. {t}" for n, (t, _) in enumerate(steps, 1)])
 
 # ================= Шаг 1. Объект =================
 
@@ -275,10 +281,13 @@ with tab1:
 with tab2:
     st.caption("Заполните только показатели, применимые к объекту; пустое поле или «Неприменимо» — показатель "
                "не учитывается. Итоговая категория — наивысшая из полученных (ПП № 127, Правила, п. 6).")
-    for section in dict.fromkeys(i["section"] for i in INDICATORS):
+    # Заголовок и признак раскрытия блока должны быть неизменными: если они меняются при вводе,
+    # Streamlit пересоздаёт блок и он сворачивается. Поэтому счётчик «заполнено» — внутри блока.
+    for n_section, section in enumerate(dict.fromkeys(i["section"] for i in INDICATORS)):
         items = [i for i in INDICATORS if i["section"] == section]
         filled = sum(1 for i in items if i["id"] in raw_values)
-        with st.expander(f"{section} · заполнено {filled} из {len(items)}", expanded=filled > 0):
+        with st.expander(f"{section} ({len(items)} показ.)", expanded=n_section == 0):
+            st.caption(f"Заполнено {filled} из {len(items)}")
             for ind in items:
                 key = f"ind_{ind['id']}"
                 with st.container(border=True):
@@ -331,6 +340,15 @@ with tab3:
         f3.file_uploader("Отметить меры из файла (TXT/CSV со списком кодов)", type=["txt", "csv"],
                          key="measures_file", on_change=load_measures_file)
         q = search.strip().lower()
+        # сводка по группам: видно, где ещё есть нереализованные меры, не раскрывая блоки
+        chips = []
+        for group in dict.fromkeys(m["group"] for m in required):
+            codes = [m["code"] for m in required if m["group"] == group]
+            done = sum(1 for c in codes if ss.get(f"m_{c}"))
+            cls = "full" if done == len(codes) else ("part" if done else "none")
+            chips.append(f'<span class="chip {cls}" title="{group_title(rules, group)}">'
+                         f'{group} {done}/{len(codes)}</span>')
+        st.markdown(f'<div class="chips">{"".join(chips)}</div>', unsafe_allow_html=True)
         shown_any = False
         for group in dict.fromkeys(m["group"] for m in required):
             gm = [m for m in required if m["group"] == group]
@@ -341,10 +359,11 @@ with tab3:
             if not visible:
                 continue
             shown_any = True
-            mark = "✅" if done == len(codes) else ("🟠" if done else "⬜")
-            with st.expander(f"{mark} {group} · {group_title(rules, group)} — {done} из {len(codes)}",
+            # заголовок блока неизменный (иначе блок сворачивается после каждой галочки),
+            # прогресс группы — внутри блока и в сводке групп выше
+            with st.expander(f"{group} · {group_title(rules, group)} ({len(codes)} мер)",
                              expanded=bool(q) or only_open):
-                st.progress(done / len(codes))
+                st.progress(done / len(codes), text=f"Реализовано {done} из {len(codes)}")
                 b1, b2, _ = st.columns([1, 1, 3])
                 b1.button("Отметить все", key=f"all_{group}", on_click=set_group, args=(codes, True))
                 b2.button("Снять все", key=f"none_{group}", on_click=set_group, args=(codes, False))
