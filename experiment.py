@@ -6,8 +6,8 @@
   1. Точность определения категории (accuracy) относительно эталона.
   2. Полноту (recall) и точность (precision) выявления несоответствий,
      долю ложных несоответствий.
-  3. Время оценки: системой (автоматический прогон), через интерфейс
-     (журнал data/results/sessions.csv) и вручную (data/manual_results.yaml).
+  3. Время и качество оценки участниками: через систему (режим эксперимента,
+     data/results/experiment_system.csv) и вручную (data/results/experiment_manual.csv).
 Результаты по каждому объекту сохраняются в data/results/experiment_<дата>.csv.
 """
 
@@ -16,9 +16,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import yaml
-
 from engine.assessment import assess
+from engine import trials
 from engine.dataset import DATA_DIR, implemented_codes, load_objects
 from engine.metrics import Counts, category_accuracy
 from engine.rules_loader import load_rules
@@ -66,39 +65,27 @@ def summarize(title: str, pairs: list[tuple], counts: Counts) -> None:
     print(f"  Доля ложных несоответствий:            {counts.false_rate:.3f}")
 
 
-def manual_comparison(objects) -> None:
-    """Метрики и время ручной оценки — для объектов, где заполнено время."""
-    path = DATA_DIR / "manual_results.yaml"
-    if not path.exists():
-        return
-    with open(path, encoding="utf-8") as f:
-        manual = (yaml.safe_load(f) or {}).get("results", {})
-    pairs, counts, minutes = [], Counts(), []
-    for obj in objects:
-        m = manual.get(obj["id"])
-        if not m or m.get("minutes") is None:
+def participants_summary() -> None:
+    """Сравнение «вручную vs через систему» по журналам участников эксперимента."""
+    means = {}
+    for title, path in (("УЧАСТНИКИ: ОЦЕНКА ЧЕРЕЗ СИСТЕМУ", trials.SYSTEM_LOG),
+                        ("УЧАСТНИКИ: РУЧНАЯ ОЦЕНКА", trials.MANUAL_LOG)):
+        rows = trials.read(path)
+        if not rows:
+            print(f"\n{title}: записей пока нет ({path.relative_to(DATA_DIR.parent)}).")
             continue
-        pairs.append((obj["expected_category"], m.get("category")))
-        counts.add(set(obj["expected_missing"]), set(m.get("missing") or []))
-        minutes.append(float(m["minutes"]))
-    if not pairs:
-        print("\nРучная оценка: data/manual_results.yaml ещё не заполнен.")
-        return
-    summarize("РУЧНАЯ ОЦЕНКА", pairs, counts)
-    print(f"  Среднее время на объект:               {sum(minutes) / len(minutes):.1f} мин")
-
-
-def ui_sessions() -> None:
-    """Среднее время оценки через интерфейс по журналу сессий."""
-    path = RESULTS_DIR / "sessions.csv"
-    if not path.exists():
-        print("\nОценка через интерфейс: журнал data/results/sessions.csv пока пуст.")
-        return
-    with open(path, encoding="utf-8") as f:
-        secs = [float(r["seconds"]) for r in csv.DictReader(f)]
-    if secs:
-        print(f"\nОЦЕНКА ЧЕРЕЗ ИНТЕРФЕЙС: сессий {len(secs)}, "
-              f"среднее время {sum(secs) / len(secs) / 60:.1f} мин")
+        pairs = [(r["expected_category"], r["category"]) for r in rows]
+        counts = Counts(sum(int(r["tp"]) for r in rows), sum(int(r["fp"]) for r in rows),
+                        sum(int(r["fn"]) for r in rows))
+        summarize(title, pairs, counts)
+        minutes = [float(r["minutes"]) for r in rows]
+        means[title] = sum(minutes) / len(minutes)
+        print(f"  Участников:                            {len({r['participant'] for r in rows})}")
+        print(f"  Среднее время на объект:               {means[title]:.1f} мин")
+    if len(means) == 2:
+        sys_t, man_t = means.values()
+        print(f"\nСокращение времени оценки: {man_t:.1f} → {sys_t:.1f} мин "
+              f"({100 * (man_t - sys_t) / man_t:.0f} %)")
 
 
 def save_csv(rows: list[dict]) -> Path:
@@ -133,8 +120,7 @@ def main() -> None:
     total = sum(r["seconds"] for r in rows)
     print(f"  Время автоматической оценки:           {total * 1000:.1f} мс на {len(rows)} объектов")
 
-    ui_sessions()
-    manual_comparison(objects)
+    participants_summary()
     print(f"\nРезультаты по объектам: {save_csv(rows)}")
 
 

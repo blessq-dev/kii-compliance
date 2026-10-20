@@ -1,0 +1,22 @@
+# Автоматический запуск тестов при каждом изменении в репозитории.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Установка зависимостей
+        run: pip install -r requirements.txt
+      - name: Тесты
+        run: pytest -q
+      - name: Эксперимент на тестовом наборе
+        run: python experiment.py

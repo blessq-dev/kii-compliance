@@ -5,24 +5,32 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from engine import trials
 from engine.rules_loader import load_rules
 
-APP = str(Path(__file__).resolve().parent.parent / "app.py")
-SESSIONS = Path(__file__).resolve().parent.parent / "data" / "results" / "sessions.csv"
+ROOT = Path(__file__).resolve().parent.parent
+APP = str(ROOT / "app.py")
+RESULTS = ROOT / "data" / "results"
+# файлы, которые приложение дописывает: тесты не должны портить реальные журналы
+LOGS = [RESULTS / "sessions.csv", RESULTS / "experiment_system.csv", RESULTS / "experiment_manual.csv"]
+REGISTRY = ROOT / "data" / "assessments"
 
 
 @pytest.fixture
 def app():
-    existed = SESSIONS.exists()
-    before = SESSIONS.read_bytes() if existed else None
+    saved = {p: p.read_bytes() for p in LOGS if p.exists()}
+    reg_before = set(REGISTRY.glob("*.json")) if REGISTRY.exists() else set()
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
     yield at
-    # тесты не должны портить журнал реальных оценок
-    if existed:
-        SESSIONS.write_bytes(before)
-    elif SESSIONS.exists():
-        SESSIONS.unlink()
+    for p in LOGS:
+        if p in saved:
+            p.write_bytes(saved[p])
+        elif p.exists():
+            p.unlink()
+    if REGISTRY.exists():
+        for f in set(REGISTRY.glob("*.json")) - reg_before:
+            f.unlink()
 
 
 def button(at, label):
@@ -48,6 +56,11 @@ def load_example(at, obj_id):
 CODES = [m["code"] for m in load_rules().measures["measures"]]
 
 
+def measure_boxes(at):
+    """Галочки мер на странице (без галочек ГИС/ИСПДн и требований № 235)."""
+    return [c for c in at.checkbox if c.key and c.key.startswith("m_")]
+
+
 def checked(at) -> int:
     """Сколько мер отмечено как реализованные (по состоянию сессии, включая скрытые фильтром)."""
     return sum(1 for c in CODES if f"m_{c}" in at.session_state and at.session_state[f"m_{c}"])
@@ -57,7 +70,7 @@ def checked(at) -> int:
 
 def test_starts_with_four_steps(app):
     assert [t.label for t in app.tabs] == [
-        "1. Объект и сфера", "2. Показатели значимости", "3. Меры защиты", "4. Отчёт"]
+        "1. Объект и сфера", "2. Показатели значимости", "3. Меры защиты", "4. Система безопасности", "5. Отчёт"]
     assert summary_category(app) == "cat0"
     assert not button(app, "Сформировать отчёт").disabled
 
@@ -130,8 +143,7 @@ def test_filter_keeps_hidden_checkmarks(app):
     load_example(app, "obj02")
     assert checked(app) == 108
     app.text_input(key="flt_search").set_value("УПД.3").run()
-    assert [c.label for c in app.checkbox][0].startswith("**УПД.3**")
-    assert len(app.checkbox) == 1
+    assert [c.key for c in measure_boxes(app)] == ["m_УПД.3"]
     app.text_input(key="flt_search").set_value("").run()
     assert checked(app) == 108  # отметки скрытых мер не потерялись
 
@@ -139,7 +151,7 @@ def test_filter_keeps_hidden_checkmarks(app):
 def test_only_open_measures(app):
     load_example(app, "obj02")
     app.toggle(key="flt_open").set_value(True).run()
-    assert sorted(c.label.split("**")[1] for c in app.checkbox) == ["ЗИС.4", "СОВ.1"]
+    assert sorted(c.key for c in measure_boxes(app)) == ["m_ЗИС.4", "m_СОВ.1"]
 
 
 def test_report_reacts_to_changes(app):
@@ -169,3 +181,103 @@ def test_reset_clears_form(app):
     button(app, "Начать новую оценку").click().run()
     assert summary_category(app) == "cat0"
     assert checked(app) == 0
+
+
+# ---------------- карточка меры: адаптация и компенсирующие меры ----------------
+
+def open_card(at, code, status, text=""):
+    at.selectbox(key="card_code").set_value(code).run()
+    at.radio(key="card_status").set_value(status).run()
+    at.text_area(key="card_text").set_value(text).run()
+    button(at, "Сохранить сведения о мере").click().run()
+    assert not at.exception
+
+
+def test_card_requires_justification(app):
+    app.number_input(key="ind_1").set_value(30.0).run()
+    open_card(app, "ЗИС.32", "not_applicable", "")
+    assert "нужно обоснование" in texts(app.error)
+    assert "не применяется" not in texts(m for m in app.markdown if "Меры базового набора" in m.value)
+
+
+def test_card_not_applicable_and_compensated(app):
+    app.number_input(key="ind_1").set_value(30.0).run()
+    open_card(app, "ЗИС.32", "not_applicable", "беспроводных сетей нет")
+    open_card(app, "АВЗ.2", "compensated", "фильтрация почты на шлюзе")
+    card = texts(m for m in app.markdown if "Меры базового набора" in m.value)
+    assert "1 / 86" in card and "не применяется: 1" in card  # АВЗ.2 закрыта компенсирующей мерой
+    button(app, "Сформировать отчёт").click().run()
+    metrics = {m.label: m.value for m in app.metric}
+    assert metrics["Не применяются"] == "1" and metrics["Несоответствий"] == "85"
+
+
+def test_checking_measure_clears_special_status(app):
+    app.number_input(key="ind_1").set_value(30.0).run()
+    open_card(app, "АВЗ.2", "compensated", "фильтрация почты на шлюзе")
+    app.checkbox(key="m_АВЗ.2").check().run()
+    assert "АВЗ.2" not in app.session_state["mst"]
+
+
+# ---------------- ГИС / ИСПДн и приказ № 235 ----------------
+
+def test_gis_notice(app):
+    app.checkbox(key="attr_gis").check().run()
+    assert "п. 24" in texts(app.info)
+
+
+def test_security_done_and_na_are_exclusive(app):
+    app.number_input(key="ind_1").set_value(30.0).run()
+    app.checkbox(key="secna_С.3").check().run()
+    app.checkbox(key="sec_С.3").check().run()
+    assert app.session_state["sec_С.3"] and not app.session_state["secna_С.3"]
+    button(app, "Сформировать отчёт").click().run()
+    assert not app.exception
+    assert any("Выполнено 1 из 32" in str(p.proto.text) for p in app.get("progress"))
+
+
+# ---------------- перечень объектов ----------------
+
+def test_registry_save_and_open(app):
+    load_example(app, "obj02")
+    button(app, "Сохранить текущую оценку в перечень").click().run()
+    assert "сохранена в перечень" in texts(app.success)
+    button(app, "Начать новую оценку").click().run()
+    assert summary_category(app) == "cat0"
+    button(app, "Открыть").click().run()
+    assert summary_category(app) == "cat2" and checked(app) == 108
+
+
+# ---------------- режим эксперимента ----------------
+
+def test_experiment_trial_is_logged(app):
+    app.toggle(key="exp_mode").set_value(True).run()
+    app.text_input(key="exp_participant").set_value("Участник 1").run()
+    app.selectbox(key="exp_object").set_value("obj01").run()
+    button(app, "▶ Начать оценку объекта через систему").click().run()
+    assert "Режим эксперимента" in texts(app.markdown)
+    app.number_input(key="ind_1").set_value(30.0).run()
+    button(app, "Сформировать отчёт").click().run()
+    row = trials.read(trials.SYSTEM_LOG)[-1]
+    assert (row["participant"], row["object_id"], row["category_ok"]) == ("Участник 1", "obj01", "1")
+    assert int(row["fn"]) == 0 and int(row["fp"]) == 87 - 3  # меры не отмечены — лишние несоответствия
+    assert "Записано" in texts(app.success)
+
+
+def test_experiment_start_requires_participant(app):
+    app.toggle(key="exp_mode").set_value(True).run()
+    button(app, "▶ Начать оценку объекта через систему").click().run()
+    assert "Укажите участника" in texts(app.error)
+
+
+def test_manual_result_form(app):
+    app.toggle(key="exp_mode").set_value(True).run()
+    app.text_input(key="man_part").set_value("Эксперт А")
+    app.selectbox(key="man_obj").set_value("obj02")
+    app.selectbox(key="man_cat").set_value("II")
+    app.number_input(key="man_min").set_value(25.0)
+    app.text_area(key="man_missing").set_value("СОВ.1, ЗИС.4")
+    button(app, "Сохранить результат").click().run()
+    assert not app.exception
+    row = trials.read(trials.MANUAL_LOG)[-1]
+    assert (row["participant"], row["object_id"], row["category_ok"], row["tp"], row["fp"], row["fn"]) == \
+        ("Эксперт А", "obj02", "1", "2", "0", "0")

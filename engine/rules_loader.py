@@ -21,6 +21,7 @@ class RuleBase:
     categorization: dict  # rules/categorization.yaml
     measures: dict        # rules/measures.yaml
     spheres: dict         # rules/spheres.yaml
+    security: dict        # rules/security_system.yaml (приказ ФСТЭК № 235)
 
     def indicator(self, indicator_id: str) -> dict:
         """Возвращает правило показателя по его номеру в Перечне (например, «2б»)."""
@@ -36,6 +37,18 @@ class RuleBase:
                 return m
         raise KeyError(f"Мера {code!r} отсутствует в базе правил")
 
+    def requirement(self, req_id: str) -> dict:
+        """Требование к системе безопасности по коду (например, «Д.1»)."""
+        for r in self.security["requirements"]:
+            if r["id"] == req_id:
+                return r
+        raise KeyError(f"Требование {req_id!r} отсутствует в базе правил")
+
+    def editions(self) -> list[str]:
+        """Документы и редакции, по которым выполняется оценка (для отчёта)."""
+        return [f"{d['act']} ({d['edition']})" for d in
+                (self.categorization["document"], self.measures["document"], self.security["document"])]
+
     def sphere_ids(self) -> set[str]:
         """Идентификаторы сфер из ст. 2 п. 8 187-ФЗ."""
         return {s["id"] for s in self.spheres["spheres"]}
@@ -47,10 +60,11 @@ def _read_yaml(path: Path) -> dict:
 
 
 def load_rules(rules_dir: Path | str = RULES_DIR) -> RuleBase:
-    """Читает три файла базы правил и возвращает объект RuleBase."""
+    """Читает файлы базы правил и возвращает объект RuleBase."""
     rules_dir = Path(rules_dir)
     return RuleBase(
         categorization=_read_yaml(rules_dir / "categorization.yaml"),
         measures=_read_yaml(rules_dir / "measures.yaml"),
         spheres=_read_yaml(rules_dir / "spheres.yaml"),
+        security=_read_yaml(rules_dir / "security_system.yaml"),
     )
