@@ -20,6 +20,11 @@ def test_every_indicator_has_source(rules):
         assert ind.get("source", "").startswith("ПП РФ № 127"), ind["id"]
 
 
+def test_every_indicator_has_short_title(rules):
+    for ind in rules.categorization["indicators"]:
+        assert ind.get("short") and len(ind["short"]) < len(ind["title"]), ind["id"]
+
+
 def test_every_measure_and_group_has_source(rules):
     for m in rules.measures["measures"]:
         assert "№ 239" in m["source"], m["code"]

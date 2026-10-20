@@ -6,3 +6,10 @@ port = 8501
 
 [browser]
 gatherUsageStats = false # не отправлять статистику использования
+
+[client]
+toolbarMode = "minimal"  # скрыть служебные кнопки разработчика (Deploy и т. п.)
+
+[theme]
+base = "light"           # единый светлый вид независимо от темы системы
+primaryColor = "#1f5fa8"

@@ -124,7 +124,7 @@ def categorize(rules: RuleBase, sphere: str, values: dict) -> CategorizationResu
         result.decisive = [r for r in result.details if r.category == result.category]
         for r in result.decisive:
             # для числового показателя показываем введённое число, для выбора — только формулировку варианта
-            value = f" = {r.value}" if isinstance(r.value, (int, float)) else ""
+            value = f" = {r.value:g}".replace(".", ",") if isinstance(r.value, (int, float)) else ""
             result.explanation.append(
                 f"Показатель {r.indicator_id}{value}: «{r.matched_text}» → "
                 f"{r.category} категория ({r.source})."

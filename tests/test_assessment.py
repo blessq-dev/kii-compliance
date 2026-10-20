@@ -4,7 +4,8 @@ import pytest
 
 from engine.assessment import assess, to_markdown
 from engine.dataset import implemented_codes, load_objects
-from engine.measures import required_measures
+from engine.measures import extract_codes, required_measures
+from engine.report_docx import to_docx
 from engine.metrics import Counts, category_accuracy
 from engine.rules_loader import load_rules
 
@@ -88,6 +89,28 @@ def test_metrics():
     assert c.precision == pytest.approx(2 / 3)
     assert Counts().recall == 1.0 and Counts().precision == 1.0
     assert category_accuracy([(1, 1), (2, 3), (None, None), (3, 3)]) == 0.75
+
+
+def test_extract_codes_from_text(rules):
+    text = "Реализованы: ИАФ.1; УПД.3, AУД.2 (латинская A), 0ДТ.2, ИАФ.1 повтор, XYZ.1, ИАФ.99"
+    found, unknown = extract_codes(rules, text)
+    assert found == ["ИАФ.1", "УПД.3", "АУД.2", "ОДТ.2"]
+    assert "ИАФ.99" in unknown
+
+
+def test_docx_report(rules):
+    import io
+
+    import docx
+    rep = assess(rules, "Объект Х", "healthcare", {"1": 30}, ["ИАФ.0"])
+    data = to_docx(rules, rep, "healthcare", {"1": 30})
+    d = docx.Document(io.BytesIO(data))
+    text = "\n".join(p.text for p in d.paragraphs)
+    cells = "\n".join(c.text for t in d.tables for row in t.rows for c in row.cells)
+    assert "Присвоена III категория значимости" in text
+    assert "Объект Х" in cells and "Здравоохранение" in cells
+    assert "ИАФ.1" in cells and "ИАФ.0" not in cells.split("Перечень")[-1].split("\n")[0]
+    assert "30 человек" in cells
 
 
 @pytest.mark.parametrize("obj", load_objects(), ids=lambda o: o["id"])
