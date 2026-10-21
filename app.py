@@ -15,6 +15,7 @@ import csv
 import json
 import time
 from datetime import date, datetime, timedelta
+from html import escape
 
 import altair as alt
 import pandas as pd
@@ -37,37 +38,130 @@ ROMAN = {1: "I", 2: "II", 3: "III"}
 IMPLEMENTED, MISSING = "implemented", "missing"
 STATUS_LABELS = {IMPLEMENTED: "Реализована", MISSING: "Не реализована",
                  NOT_APPLICABLE: "Не применяется (адаптация, п. 23)", COMPENSATED: "Компенсирована (п. 26)"}
-# цвета категорий: I — красный (самая высокая), II — оранжевый, III — жёлтый
+# Единая палитра интерфейса. Акцент — синий (как primaryColor в .streamlit/config.toml).
+# Цвета категорий: I — красный (самая высокая), II — оранжевый, III — жёлтый;
+# сочетания «текст на фоне» подобраны с контрастом не ниже 4,5 : 1 (WCAG AA).
+COLORS = {"accent": "#1f5fa8", "ink": "#14233a", "muted": "#566175", "done": "#1e7a46",
+          "compensated": "#2f6fca", "missing": "#c0362c"}
 CSS = """
 <style>
-.block-container {padding-top: 2rem; max-width: 1200px;}
-.badge {display:inline-block; padding:.2rem .75rem; border-radius:999px; font-weight:600; font-size:.9rem;}
-.cat1 {background:#fde2e1; color:#9b1c1c;} .cat2 {background:#ffe8cc; color:#8a4b0f;}
-.cat3 {background:#fff4c2; color:#6b5600;} .cat0 {background:#eceff3; color:#4b5563;}
-.card {border-radius:.9rem; padding:1rem 1.2rem; height:100%;}
-.card .label {font-size:.8rem; opacity:.75; margin-bottom:.2rem;}
-.card .value {font-size:1.6rem; font-weight:700; line-height:1.2;}
-.card .sub {font-size:.8rem; opacity:.8; margin-top:.3rem;}
-.ref {display:flex; gap:.4rem; margin:.3rem 0 .2rem;}
-.ref div {flex:1; border-radius:.55rem; padding:.4rem .55rem; font-size:.78rem; line-height:1.25;
-          border:2px solid transparent; opacity:.5; color:#1f2328;}
-.ref div b {display:block; font-size:.72rem; letter-spacing:.03em; margin-bottom:.1rem;}
-.ref div.hit {opacity:1; border-color:#1f2328;}
-.ref .c3 {background:#fff4c2;} .ref .c2 {background:#ffe8cc;} .ref .c1 {background:#fde2e1;}
+:root {--acc:#1f5fa8; --acc-bg:#eaf1fa; --ink:#14233a; --muted:#566175; --line:#dde3ec; --soft:#f5f7fb;
+       --c1:#a61b12; --c1bg:#fdecea; --c1ln:#f3c4bf; --c2:#97470a; --c2bg:#fef0e1; --c2ln:#f6d2ab;
+       --c3:#6f5300; --c3bg:#fff5d1; --c3ln:#f0dc8f; --ok:#1b6e40; --okbg:#e3f4ea;}
+.block-container {padding-top: 1.6rem; max-width: 1200px;}
+h1, h2, h3, h4 {color: var(--ink);}
+/* вкладки-шаги: крупнее и заметнее стандартных */
+[data-testid="stTabs"] [role="tablist"] {gap: 1.6rem;}
+[data-testid="stTab"] {padding-top: .35rem; padding-bottom: .35rem;}
+[data-testid="stTab"] p {font-size: 1rem; font-weight: 600;}
+[data-testid="stTab"][aria-selected="false"] p {color: var(--muted);}
+[data-testid="stTab"][aria-selected="false"]:hover p {color: var(--acc);}
+/* раскрывающиеся блоки */
+[data-testid="stExpander"] details {border-radius: .7rem; border-color: var(--line);}
+[data-testid="stExpander"] summary p {font-weight: 600;}
+/* метки категорий */
+.badge {display:inline-block; padding:.18rem .75rem; border-radius:999px; font-weight:600; font-size:.88rem;
+        white-space:nowrap;}
+.cat1 {background:var(--c1bg); color:var(--c1);} .cat2 {background:var(--c2bg); color:var(--c2);}
+.cat3 {background:var(--c3bg); color:var(--c3);} .cat0 {background:#eef1f5; color:#4a5466;}
+/* шапка */
+.apptitle {font-size:1.85rem; font-weight:700; line-height:1.2; color:var(--ink);}
+.appsub {font-size:1rem; color:var(--muted); margin:.25rem 0 1rem; display:flex; gap:.6rem; align-items:center;
+         flex-wrap:wrap;}
+/* сводка: сетка карточек, на узком экране переносится по строкам */
+.summary {display:grid; grid-template-columns:repeat(auto-fit, minmax(175px, 1fr)); gap:.75rem; margin:0 0 1.1rem;}
+.card {background:#fff; border:1px solid var(--line); border-top:4px solid #c3ccd9; border-radius:.75rem;
+       padding:.8rem 1rem .85rem; color:var(--ink); min-width:0;}
+.card .label {font-size:.78rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--muted);}
+.card .value {font-size:1.65rem; font-weight:700; line-height:1.25; margin-top:.15rem;}
+.card .sub {font-size:.82rem; color:var(--muted); margin-top:.2rem;}
+.card.cat1 {background:var(--c1bg); border-color:var(--c1ln); border-top-color:var(--c1);}
+.card.cat2 {background:var(--c2bg); border-color:var(--c2ln); border-top-color:var(--c2);}
+.card.cat3 {background:var(--c3bg); border-color:var(--c3ln); border-top-color:var(--c3);}
+.card.cat1 .value, .card.cat1 .sub, .card.cat1 .label {color:var(--c1);}
+.card.cat2 .value, .card.cat2 .sub, .card.cat2 .label {color:var(--c2);}
+.card.cat3 .value, .card.cat3 .sub, .card.cat3 .label {color:var(--c3);}
+.card.acc {border-top-color:var(--acc);}
+.mini {height:6px; border-radius:3px; background:#e6eaf0; margin-top:.45rem; overflow:hidden;}
+.mini span {display:block; height:100%; background:var(--acc); border-radius:3px;}
+/* справочные значения показателя (ПП № 127) */
+.ref {display:flex; gap:.4rem; margin:.3rem 0 .2rem; flex-wrap:wrap;}
+.ref div {flex:1 1 150px; border-radius:.55rem; padding:.4rem .6rem; font-size:.8rem; line-height:1.3;
+          border:1px solid var(--line); background:var(--soft); color:#3d4757;}
+.ref div b {display:block; font-size:.72rem; letter-spacing:.03em; margin-bottom:.1rem; text-transform:uppercase;}
+.ref .c1 b {color:var(--c1);} .ref .c2 b {color:var(--c2);} .ref .c3 b {color:var(--c3);}
+.ref div.hit {border-width:2px; font-weight:600; box-shadow:0 1px 4px rgba(20,35,58,.12);}
+.ref .c3.hit {background:var(--c3bg); border-color:var(--c3); color:var(--c3);}
+.ref .c2.hit {background:var(--c2bg); border-color:var(--c2); color:var(--c2);}
+.ref .c1.hit {background:var(--c1bg); border-color:var(--c1); color:var(--c1);}
+/* группы мер */
 .chips {display:flex; flex-wrap:wrap; gap:.35rem; margin:.2rem 0 .8rem;}
-.chip {padding:.15rem .55rem; border-radius:999px; font-size:.8rem; font-weight:600;}
-.chip.full {background:#dcf2e3; color:#1e6b3a;} .chip.part {background:#ffe8cc; color:#8a4b0f;}
-.chip.none {background:#fde2e1; color:#9b1c1c;}
-.mnote {font-size:.8rem; margin:-.4rem 0 .4rem 1.9rem; opacity:.85;}
-.apptitle {font-size:1.9rem; font-weight:700; line-height:1.2;}
-.appsub {font-size:.95rem; opacity:.65; margin:.2rem 0 1rem;}
-.exp {border:2px dashed #1f5fa8; border-radius:.8rem; padding:.6rem 1rem; margin-bottom:1rem; background:#eef4fb;}
+.chip {padding:.15rem .6rem; border-radius:999px; font-size:.8rem; font-weight:600; border:1px solid transparent;}
+.chip.full {background:var(--okbg); color:var(--ok);} .chip.part {background:var(--c2bg); color:var(--c2);}
+.chip.none {background:var(--c1bg); color:var(--c1);}
+.legend {font-size:.8rem; color:var(--muted); margin:-.3rem 0 .6rem;}
+.mnote {font-size:.82rem; margin:-.4rem 0 .5rem 1.9rem; color:var(--muted);}
+/* подсказки «что дальше» и пустые состояния */
+.hint {margin:1.2rem 0 .3rem; padding:.6rem .9rem; border-left:4px solid var(--acc); background:var(--acc-bg);
+       border-radius:.4rem; font-size:.92rem; color:var(--ink);}
+.empty {border:1px dashed #b9c3d1; border-radius:.8rem; padding:1.4rem 1.5rem; background:var(--soft);
+        color:var(--ink); margin:.4rem 0 1rem;}
+.empty .t {font-size:1.1rem; font-weight:700; margin-bottom:.3rem;}
+.empty .d {color:var(--muted); font-size:.93rem; line-height:1.5;}
+.empty ul {margin:.5rem 0 0 1.1rem; padding:0; color:var(--muted); font-size:.93rem;}
+/* итог категорирования в отчёте */
+.verdict {border-radius:.8rem; padding:1rem 1.25rem; margin:.3rem 0 .9rem; border:1px solid var(--line);
+          border-left:6px solid #8b95a5;}
+.verdict .vl {font-size:.78rem; font-weight:600; text-transform:uppercase; letter-spacing:.05em; opacity:.9;}
+.verdict .vt {font-size:1.45rem; font-weight:700; line-height:1.3;}
+.verdict .vs {font-size:.92rem; margin-top:.15rem;}
+.verdict.cat1 {border-color:var(--c1ln); border-left-color:var(--c1);}
+.verdict.cat2 {border-color:var(--c2ln); border-left-color:var(--c2);}
+.verdict.cat3 {border-color:var(--c3ln); border-left-color:var(--c3);}
+/* таблицы отчёта: текст переносится, а не обрезается */
+.tblwrap {border:1px solid var(--line); border-radius:.6rem; overflow:auto; margin:.2rem 0 1rem;}
+.tblwrap.scroll {max-height:430px;}
+.tbl {width:100%; border-collapse:collapse; font-size:.88rem; color:var(--ink);}
+.tbl th {position:sticky; top:0; background:var(--soft); text-align:left; font-weight:600; color:#3d4757;
+         padding:.5rem .7rem; border-bottom:1px solid var(--line);}
+.tbl td {padding:.45rem .7rem; border-bottom:1px solid #edf0f4; vertical-align:top; line-height:1.4;}
+.tbl tr:last-child td {border-bottom:none;}
+.tbl td:first-child {font-weight:600; white-space:nowrap;}
+/* метрики отчёта — карточками */
+[data-testid="stMetric"] {background:#fff; border:1px solid var(--line); border-radius:.75rem; padding:.65rem .9rem;}
+[data-testid="stMetricLabel"] p {font-size:.82rem; color:var(--muted); white-space:normal;}
+[data-testid="stMetricValue"] {font-size:1.6rem; font-weight:700; color:var(--ink);}
+.st-key-charts [data-testid="stHorizontalBlock"] {flex-wrap:wrap; row-gap:1rem;}
+.st-key-charts [data-testid="stColumn"] {min-width:300px;}
+.st-key-charts [data-testid="stColumn"]:first-child {flex:1 1 300px !important;}
+.st-key-charts [data-testid="stColumn"]:last-child {flex:2 1 360px !important;}
+/* боковая панель */
+.brand {display:flex; gap:.6rem; align-items:flex-start; margin:-.5rem 0 .4rem;}
+.brand .logo {font-size:1.6rem; line-height:1;}
+.brand .name {font-weight:700; font-size:1.05rem; line-height:1.25; color:var(--ink);}
+.brand .docs {font-size:.8rem; color:var(--muted); margin-top:.25rem; line-height:1.35;}
+.steps {display:flex; flex-direction:column; gap:.15rem; margin:.2rem 0;}
+.step {display:flex; align-items:center; gap:.6rem; padding:.35rem .5rem; border-radius:.5rem; font-size:.93rem;
+       color:var(--ink);}
+.step .n {flex:0 0 1.55rem; height:1.55rem; border-radius:50%; display:flex; align-items:center;
+          justify-content:center; font-size:.8rem; font-weight:700; border:2px solid #b6c0ce; color:var(--muted);
+          background:#fff;}
+.step.done .n {background:var(--ok); border-color:var(--ok); color:#fff;}
+.step.next {background:var(--acc-bg); font-weight:600;}
+.step.next .n {border-color:var(--acc); color:var(--acc);}
+.exp {border:2px dashed var(--acc); border-radius:.8rem; padding:.6rem 1rem; margin-bottom:1rem; background:var(--acc-bg);}
+/* «не применимо» у требований № 235 — второстепенная отметка, с отступом */
+[class*="st-key-secna_"] {margin:-.55rem 0 .2rem 1.9rem;}
+[class*="st-key-secna_"] label p {font-size:.82rem; color:var(--muted); font-style:italic;}
 /* русские надписи у загрузки файла вместо встроенных английских */
 [data-testid="stFileUploaderDropzone"] button > * {display:none !important;}
-[data-testid="stFileUploaderDropzone"] button::after {content:"📂 Выбрать файл"; font-size:.9rem;}
+[data-testid="stFileUploaderDropzone"] button::after {content:"Выбрать файл"; font-size:.9rem;}
 [data-testid="stFileUploaderDropzoneInstructions"] small {display:none;}
 [data-testid="stFileUploaderDropzoneInstructions"] span {font-size:0;}
-[data-testid="stFileUploaderDropzoneInstructions"] span::after {content:"Перетащите файл сюда"; font-size:.9rem;}
+[data-testid="stFileUploaderDropzoneInstructions"] span::after {content:"или перетащите его сюда"; font-size:.9rem;}
+/* длинные варианты ответа (дословный текст ПП № 127): кружок — напротив первой строки */
+[data-testid="stRadioOption"] > div {align-items:flex-start !important;}
+[data-testid="stRadioOption"] > div > div:first-child {margin-top:.2rem;}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -124,6 +218,39 @@ def badge(category, text=None) -> str:
 
 def pct_text(x) -> str:
     return "—" if x is None else f"{x:.1f}".replace(".", ",") + " %"
+
+
+def plural(n: int, forms: tuple[str, str, str]) -> str:
+    """Число со словом в нужной форме: 1 показатель, 2 показателя, 5 показателей."""
+    if n % 10 == 1 and n % 100 != 11:
+        word = forms[0]
+    elif 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        word = forms[1]
+    else:
+        word = forms[2]
+    return f"{n} {word}"
+
+
+def html_table(rows: list[dict], scroll: bool = False) -> str:
+    """Таблица для отчёта: длинный текст переносится по строкам, а не обрезается."""
+    if not rows:
+        return ""
+    head = "".join(f"<th>{escape(str(c))}</th>" for c in rows[0])
+    body = "".join("<tr>" + "".join(f"<td>{escape(str(v))}</td>" for v in r.values()) + "</tr>" for r in rows)
+    return (f'<div class="tblwrap{" scroll" if scroll else ""}"><table class="tbl"><thead><tr>{head}</tr></thead>'
+            f"<tbody>{body}</tbody></table></div>")
+
+
+def hint(text: str):
+    """Подсказка внизу вкладки: что делать дальше."""
+    st.markdown(f'<div class="hint">→ {text}</div>', unsafe_allow_html=True)
+
+
+def empty_state(title: str, text: str, items: list[str] | None = None):
+    """Пустое состояние вкладки: почему здесь ничего нет и что сделать."""
+    lst = "<ul>" + "".join(f"<li>{i}</li>" for i in items) + "</ul>" if items else ""
+    st.markdown(f'<div class="empty"><div class="t">{title}</div><div class="d">{text}</div>{lst}</div>',
+                unsafe_allow_html=True)
 
 
 def reset_form():
@@ -404,29 +531,48 @@ state_now = current_state()
 # ---------------- боковая панель ----------------
 
 with st.sidebar:
-    st.markdown("### 🛡️ Оценка соответствия\nзначимого объекта КИИ")
-    st.caption("Категорирование по ПП РФ № 127, меры по приказу ФСТЭК России № 239, "
-               "система безопасности по приказу № 235.")
+    st.markdown('<div class="brand"><div class="logo">🛡️</div><div><div class="name">Оценка соответствия '
+                'значимого объекта КИИ</div><div class="docs">Категория — ПП РФ №&nbsp;127<br>Меры — приказ ФСТЭК '
+                '№&nbsp;239<br>Система безопасности — №&nbsp;235</div></div></div>', unsafe_allow_html=True)
     st.date_input("Дата оценки", key="rules_date", format="DD.MM.YYYY",
                   min_value=date(2000, 1, 1), max_value=date(2100, 12, 31),
                   help="Оценка выполняется по редакциям документов, действующим на эту дату.")
     findings = get_findings(rules.on_date)
-    with st.expander("Редакции документов"):
+    with st.expander("База правил и редакции", icon=":material/library_books:"):
+        show_flash("flash_rules")
         for kind, pkg in rules.packages.items():
             st.caption(f"**{KIND_TITLES[kind]}:** {pkg.title}, применяется с {pkg.effective_from:%d.%m.%Y}")
+        others = [p for p in get_packages() if p.path not in {q.path for q in rules.packages.values()}]
+        if others:
+            st.caption("Другие редакции в базе: " + "; ".join(
+                f"{p.passport['act']} ({p.passport['edition']}) — с {p.effective_from:%d.%m.%Y}" for p in others))
         st.caption(f"Проверка базы правил: ошибок {sum(f.level == ERROR for f in findings)}, "
                    f"замечаний к тексту документов {sum(f.level != ERROR for f in findings)}.")
+        if findings:
+            with st.popover("Замечания проверки", width="stretch"):
+                st.caption("Дефекты текста документов, перенесённые дословно:")
+                for f in findings:
+                    (st.error if f.level == ERROR else st.markdown)(f"**{f.rule}**: {f.text}")
+        st.file_uploader("Добавить редакцию (пакет правил .yaml)", type=["yaml", "yml"], key="pkg_file",
+                         help="Пакет проверяется автоматически; пакет с ошибками не добавляется.")
+        st.button("Проверить и добавить", on_click=add_package, width="stretch")
     st.divider()
     steps = [("Объект и сфера", bool(ss.object_name)),
              ("Показатели значимости", bool(raw_values) and validation.ok),
              ("Меры защиты", bool(done_codes or comp_codes or na_codes)),
              ("Система безопасности", bool(sec_done or sec_na)),
              ("Отчёт", "report" in ss)]
+    # список шагов: выполненные — зелёной галочкой, первый невыполненный (следующий) подсвечен
+    next_step = next((n for n, (_, ok) in enumerate(steps, 1) if not ok), None)
+    rows = []
     for n, (title, ok) in enumerate(steps, 1):
-        st.markdown(f"{'✅' if ok else '○'} **{n}.** {title}")
+        cls = "done" if ok else ("next" if n == next_step else "")
+        rows.append(f'<div class="step {cls}"><span class="n">{"✓" if ok else n}</span>'
+                    f'<span>{title}</span></div>')
+    st.markdown(f'<div class="steps">{"".join(rows)}</div>', unsafe_allow_html=True)
     st.divider()
-    st.caption(f"⏱ Время с начала оценки: {(time.time() - ss.started_at) / 60:.1f} мин")
-    st.button("Начать новую оценку", on_click=reset_form, width="stretch")
+    st.caption(f"⏱ Время с начала оценки: {(time.time() - ss.started_at) / 60:.1f} мин".replace(".", ","))
+    st.button("Начать новую оценку", on_click=reset_form, width="stretch", icon=":material/restart_alt:")
     st.toggle("Режим эксперимента", key="exp_mode",
               help="Для эксперимента ВКР: участник оценивает тестовый объект, время и результат "
                    "записываются в журнал и сравниваются с эталоном.")
@@ -441,35 +587,40 @@ with st.sidebar:
 
 # ---------------- шапка и сводка ----------------
 
+_obj_title = escape(ss.object_name) if ss.object_name else "Объект не назван — начните с шага 1"
 st.markdown(f'<div class="apptitle">Оценка соответствия значимого объекта КИИ</div>'
-            f'<div class="appsub">{ss.object_name or "Объект не назван"}</div>', unsafe_allow_html=True)
+            f'<div class="appsub"><span>{_obj_title}</span>'
+            f'{badge(cat.category) if cat.category else ""}</div>', unsafe_allow_html=True)
 if ss.get("exp_mode") and ss.get("trial"):
     t = ss.trial
     st.markdown(f'<div class="exp">🧪 <b>Режим эксперимента.</b> Участник: {t["participant"]}, объект: '
                 f'{t["object_id"]}, идёт {(time.time() - t["started"]) / 60:.1f} мин.</div>',
                 unsafe_allow_html=True)
 
-c1, c2, c3, c4 = st.columns(4)
+# Сводка — одна сетка карточек (на узком экране карточки переносятся, а не сжимаются)
 if not cat.is_kii_subject:
-    cat_sub = "сфера вне 187-ФЗ"
+    cat_sub = "сфера вне 187-ФЗ — не категорируется"
 else:
     decisive = ", ".join(f"п. {r.indicator_id}" for r in cat.decisive)
-    cat_sub = f"определяет: {decisive}" if decisive else "показатели не дают категорию"
-c1.markdown(f'<div class="card cat{cat.category or 0}"><div class="label">Категория значимости</div>'
-            f'<div class="value">{ROMAN.get(cat.category, "—")}</div><div class="sub">{cat_sub}</div></div>',
-            unsafe_allow_html=True)
-c2.markdown(f'<div class="card cat0"><div class="label">Показатели</div>'
-            f'<div class="value">{len(raw_values)} / {len(INDICATORS)}</div>'
-            f'<div class="sub">{"ошибок ввода: " + str(len(validation.errors)) if validation.errors else "заполнено"}'
-            f'</div></div>', unsafe_allow_html=True)
-c3.markdown(f'<div class="card cat0"><div class="label">Меры базового набора</div>'
-            f'<div class="value">{len(done_codes) + len(comp_codes)} / {applicable}</div>'
-            f'<div class="sub">закрыто{f", не применяется: {len(na_codes)}" if na_codes else ""}</div></div>',
-            unsafe_allow_html=True)
-c4.markdown(f'<div class="card cat0"><div class="label">Соответствие</div><div class="value">'
-            f'{pct_text(compliance) if req_codes else "—"}</div>'
-            f'<div class="sub">несоответствий: {len(missing_codes)}</div></div>', unsafe_allow_html=True)
-st.write("")
+    cat_sub = f"определяет показатель {decisive}" if decisive else "заполните показатели (шаг 2)"
+closed_n = len(done_codes) + len(comp_codes)
+ind_sub = (f'<span style="color:var(--c1)">ошибок ввода: {len(validation.errors)}</span>' if validation.errors
+           else "заполнено из применимых" if raw_values else "пока не заполнены")
+cards = [
+    f'<div class="card cat{cat.category or 0}"><div class="label">Категория значимости</div>'
+    f'<div class="value">{ROMAN.get(cat.category, "—")}</div><div class="sub">{cat_sub}</div></div>',
+    f'<div class="card cat0"><div class="label">Показатели</div>'
+    f'<div class="value">{len(raw_values)} / {len(INDICATORS)}</div><div class="sub">{ind_sub}</div></div>',
+    f'<div class="card cat0"><div class="label">Меры базового набора</div>'
+    f'<div class="value">{closed_n} / {applicable}</div>'
+    f'<div class="sub">закрыто{f", не применяется: {len(na_codes)}" if na_codes else ""}</div>'
+    f'<div class="mini"><span style="width:{100 * closed_n / applicable if applicable else 0:.0f}%"></span></div>'
+    f'</div>',
+    f'<div class="card acc"><div class="label">Соответствие</div><div class="value">'
+    f'{pct_text(compliance) if req_codes else "—"}</div>'
+    f'<div class="sub">{"несоответствий: " + str(len(missing_codes)) if req_codes else "появится после шага 2"}'
+    f'</div></div>']
+st.markdown(f'<div class="summary">{"".join(cards)}</div>', unsafe_allow_html=True)
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([f"{n}. {t}" for n, (t, _) in enumerate(steps, 1)])
 
@@ -538,13 +689,18 @@ with tab1:
                     "или уровнем защищённости ПДн (приказ № 239, п. 24). Требования к ГИС и ИСПДн в базе "
                     "правил не учтены — их нужно проверить отдельно.")
     with right:
+        with st.expander("Демонстрация: пример из тестового набора", icon=":material/school:"):
+            st.caption("Заполняет все шаги данными тестового объекта — удобно для знакомства с программой.")
+            st.selectbox("Объект", [o["id"] for o in OBJECTS], key="example_id",
+                         format_func=lambda i: f"{i}: " + next(o["name"] for o in OBJECTS if o["id"] == i))
+            st.button("Загрузить пример", on_click=load_example, type="primary", icon=":material/play_arrow:")
         st.subheader("Сохранение и загрузка")
-        st.download_button("💾 Сохранить оценку в файл", json.dumps(state_now, ensure_ascii=False, indent=2),
+        st.download_button("Сохранить оценку в файл", json.dumps(state_now, ensure_ascii=False, indent=2),
                            file_name=f"оценка_{datetime.now():%Y%m%d_%H%M}.json", mime="application/json",
-                           width="stretch")
+                           width="stretch", icon=":material/save:")
         st.file_uploader("Продолжить сохранённую оценку (.json)", type=["json"], key="session_file",
                          on_change=load_session_file)
-        with st.expander("📁 Перечень объектов"):
+        with st.expander("Перечень объектов", icon=":material/folder_open:"):
             st.button("Сохранить текущую оценку в перечень", on_click=save_to_registry, width="stretch")
             saved = registry.list_all()
             if saved:
@@ -563,68 +719,56 @@ with tab1:
                 confirm = r2.checkbox("подтверждаю удаление", key="reg_confirm")
                 r2.button("Удалить", on_click=delete_from_registry, disabled=not confirm, width="stretch")
             else:
-                st.caption("Перечень пуст. Сохранённые оценки хранятся в data/assessments/.")
-        with st.expander("🗂 База правил: редакции и обновления"):
-            show_flash("flash_rules")
-            active = {p.path for p in rules.packages.values()}
-            packages = get_packages()
-            st.dataframe(pd.DataFrame([{
-                "Вид правил": KIND_TITLES[p.kind], "Документ": p.passport["act"], "Редакция": p.passport["edition"],
-                "Применяется с": f"{p.effective_from:%d.%m.%Y}", "Сейчас": "✓" if p.path in active else ""}
-                for p in packages]), hide_index=True, width="stretch")
-            if findings:
-                st.markdown("**Проверка базы правил** — дефекты текста документов, перенесённые дословно:")
-                for f in findings:
-                    (st.error if f.level == ERROR else st.caption)(f"{f.rule}: {f.text} — {f.package}")
-            # даты, когда у документа сменялась редакция (кроме первой редакции каждого документа)
-            changes_at = [p.effective_from for p in packages
-                          if any(q.kind == p.kind and q.effective_from < p.effective_from for q in packages)]
-            if changes_at:
-                st.markdown("**Сравнение редакций**")
-                last = max([d for d in changes_at if d <= rules.on_date] or changes_at)
-                st.date_input("Сравнить с базой правил на дату", key="cmp_date", format="DD.MM.YYYY",
-                              min_value=date(2000, 1, 1), max_value=date(2100, 12, 31),
-                              value=last - timedelta(days=1))
-                try:
-                    old_rules = get_rules(ss.cmp_date)
-                except RuleBaseError as e:
-                    st.error(str(e))
-                else:
-                    changes = diff_rules(old_rules, rules)
-                    st.caption(f"Изменений в правилах: {len(changes)} (от редакций на {ss.cmp_date:%d.%m.%Y} "
-                               f"к редакциям на {rules.on_date:%d.%m.%Y}).")
-                    for c in changes[:50]:
-                        st.caption(f"• {c}")
-                    saved_states = [s["state"] for s in registry.list_all()]
-                    states = saved_states or [test_object_state(o) for o in OBJECTS]
-                    st.markdown("**Влияние на объекты** " + ("из перечня" if saved_states else
-                                                             "(перечень пуст — показаны тестовые объекты)"))
-                    st.dataframe(pd.DataFrame([{
-                        "Объект": i.name,
-                        "Категория": f"{ROMAN.get(i.category_old, '—')} → {ROMAN.get(i.category_new, '—')}",
-                        "Стали обязательными": ", ".join(i.became_required),
-                        "Перестали быть обязательными": ", ".join(i.no_longer_required),
-                        "Новые несоответствия": ", ".join(i.new_missing),
-                        "Замечание": i.error or ("" if i.changed else "без изменений")}
-                        for i in impact_on_objects(old_rules, rules, states)]), hide_index=True, width="stretch")
-            st.markdown("**Добавить редакцию документа**")
-            st.file_uploader("Пакет правил (.yaml)", type=["yaml", "yml"], key="pkg_file",
-                             help="Пакет проверяется автоматически; пакет с ошибками не добавляется.")
-            st.button("Проверить и добавить", on_click=add_package)
-        with st.expander("🎓 Демонстрация: пример из тестового набора"):
-            st.selectbox("Объект", [o["id"] for o in OBJECTS], key="example_id",
-                         format_func=lambda i: f"{i}: " + next(o["name"] for o in OBJECTS if o["id"] == i))
-            st.button("Загрузить пример", on_click=load_example)
+                st.caption("Перечень пока пуст: сохраните сюда текущую оценку кнопкой выше, чтобы вернуться "
+                           "к ней позже (файлы хранятся в data/assessments/).")
+    # Сравнение редакций — только если у какого-либо документа в базе больше одной редакции
+    packages = get_packages()
+    changes_at = [p.effective_from for p in packages
+                  if any(q.kind == p.kind and q.effective_from < p.effective_from for q in packages)]
+    if changes_at:
+        with st.expander("Сравнение редакций и влияние на объекты", icon=":material/compare_arrows:"):
+            last = max([d for d in changes_at if d <= rules.on_date] or changes_at)
+            st.date_input("Сравнить с базой правил на дату", key="cmp_date", format="DD.MM.YYYY",
+                          min_value=date(2000, 1, 1), max_value=date(2100, 12, 31),
+                          value=last - timedelta(days=1))
+            try:
+                old_rules = get_rules(ss.cmp_date)
+            except RuleBaseError as e:
+                st.error(str(e))
+            else:
+                changes = diff_rules(old_rules, rules)
+                st.caption(f"Изменений в правилах: {len(changes)} (от редакций на {ss.cmp_date:%d.%m.%Y} "
+                           f"к редакциям на {rules.on_date:%d.%m.%Y}).")
+                for c in changes[:50]:
+                    st.caption(f"• {c}")
+                saved_states = [s["state"] for s in registry.list_all()]
+                states = saved_states or [test_object_state(o) for o in OBJECTS]
+                st.markdown("**Влияние на объекты** " + ("из перечня" if saved_states else
+                                                         "(перечень пуст — показаны тестовые объекты)"))
+                st.dataframe(pd.DataFrame([{
+                    "Объект": i.name,
+                    "Категория": f"{ROMAN.get(i.category_old, '—')} → {ROMAN.get(i.category_new, '—')}",
+                    "Стали обязательными": ", ".join(i.became_required),
+                    "Перестали быть обязательными": ", ".join(i.no_longer_required),
+                    "Новые несоответствия": ", ".join(i.new_missing),
+                    "Замечание": i.error or ("" if i.changed else "без изменений")}
+                    for i in impact_on_objects(old_rules, rules, states)]), hide_index=True, width="stretch")
+    hint("Далее — вкладка <b>«2. Показатели значимости»</b>: по ним определяется категория объекта."
+         if ss.object_name else "Укажите наименование объекта и сферу деятельности, затем перейдите "
+         "на вкладку <b>«2. Показатели значимости»</b>. Для знакомства загрузите пример (блок «Демонстрация»).")
 
 # ================= Шаг 2. Показатели =================
 
 with tab2:
-    st.caption("Заполните только показатели, применимые к объекту; пустое поле или «Неприменимо» — показатель "
-               "не учитывается. Итоговая категория — наивысшая из полученных (ПП № 127, Правила, п. 6).")
+    st.markdown("Заполните **только показатели, применимые к объекту**: пустое поле или «Неприменимо» — "
+                "показатель не учитывается. Под числовым полем — пороги категорий из ПП № 127; диапазон, "
+                "в который попало значение, выделяется. Итоговая категория — наивысшая из полученных "
+                "(ПП № 127, Правила, п. 6).")
     for n_section, section in enumerate(dict.fromkeys(i["section"] for i in INDICATORS)):
         items = [i for i in INDICATORS if i["section"] == section]
         filled = sum(1 for i in items if i["id"] in raw_values)
-        with st.expander(f"{section} ({len(items)} показ.)", expanded=n_section == 0):
+        with st.expander(f"{section} · {plural(len(items), ('показатель', 'показателя', 'показателей'))}",
+                         expanded=n_section == 0):
             st.caption(f"Заполнено {filled} из {len(items)}")
             # Условия применимости показателей этого раздела (признаки субъекта или объекта)
             for cond_id in dict.fromkeys(i["applies_if"] for i in items if i.get("applies_if")):
@@ -656,7 +800,7 @@ with tab2:
                     hit = None
                     if value is not None and not errs:
                         hit = next((r.category for r in cat.details if r.indicator_id == ind["id"]), None)
-                        res.markdown("<br>" + badge(hit, None if hit else "не соответствует"),
+                        res.markdown("<br>" + badge(hit, None if hit else "вне порогов категорий"),
                                      unsafe_allow_html=True)
                     if ind["type"] == "number":
                         cells = "".join(f'<div class="c{k}{" hit" if k == hit else ""}"><b>{ROMAN[k]} категория</b>'
@@ -670,16 +814,31 @@ with tab2:
                         note = boundary_note(ind, value)
                         if note:
                             st.info(note)
+    if validation.errors:
+        hint("Исправьте ошибки ввода в показателях " + ", ".join(validation.errors) + " — пока они есть, "
+             "отчёт не формируется.")
+    elif significant:
+        hint(f"Определена {ROMAN[cat.category]} категория значимости. Далее — вкладка "
+             "<b>«3. Меры защиты»</b>: отметьте меры, которые уже реализованы.")
+    elif cat.is_kii_subject:
+        hint("Пока ни один показатель не даёт категорию. Если показатели заполнены верно, категория "
+             "не присваивается — можно сразу перейти к вкладке <b>«5. Отчёт»</b>.")
 
 # ================= Шаг 3. Меры =================
 
 with tab3:
     if not significant:
-        st.info("Требования приказа ФСТЭК № 239 применяются к значимым объектам. "
-                "Сначала определите категорию на шаге «Показатели».")
+        empty_state("Сначала нужна категория значимости",
+                    "Меры защиты приказа ФСТЭК России № 239 обязательны только для значимых объектов, "
+                    "а их состав зависит от категории. "
+                    + ("Сфера деятельности не входит в 187-ФЗ — объект не категорируется (вкладка 1)."
+                       if not cat.is_kii_subject else
+                       "Заполните показатели на вкладке «2. Показатели значимости» — здесь появится "
+                       "базовый набор мер для полученной категории."))
     else:
-        st.markdown(f"Базовый набор мер для {badge(cat.category)} — **{len(required)}** мер "
-                    f"(приказ ФСТЭК России № 239, п. 23 и приложение).", unsafe_allow_html=True)
+        st.markdown(f"Базовый набор мер для {badge(cat.category)} — **{plural(len(required), ('мера', 'меры', 'мер'))}** "
+                    f"(приказ ФСТЭК России № 239, п. 23 и приложение). Отметьте галочкой реализованные меры; "
+                    f"особые случаи — в карточке меры.", unsafe_allow_html=True)
         st.progress((len(done_codes) + len(comp_codes)) / applicable if applicable else 1.0,
                     text=f"Закрыто {len(done_codes) + len(comp_codes)} из {applicable} применимых мер"
                          + (f" (не применяются: {len(na_codes)})" if na_codes else ""))
@@ -690,7 +849,8 @@ with tab3:
         f3.file_uploader("Отметить меры из файла (TXT/CSV со списком кодов)", type=["txt", "csv"],
                          key="measures_file", on_change=load_measures_file)
 
-        with st.expander("🗂 Карточка меры: адаптация, компенсирующие меры, сведения о реализации"):
+        with st.expander("Карточка меры: адаптация, компенсирующие меры, сведения о реализации",
+                         icon=":material/edit_note:"):
             st.caption("«Не применяется» — мера исключена из базового набора, т. к. связана с технологиями "
                        "или характеристиками, которых нет в объекте (п. 23, абз. 3). «Компенсирована» — вместо "
                        "меры применена компенсирующая мера (п. 26). Для обоих статусов нужно обоснование.")
@@ -702,11 +862,11 @@ with tab3:
             k2.radio("Статус", list(STATUS_LABELS), key="card_status", format_func=STATUS_LABELS.get)
             st.text_area("Обоснование / описание компенсирующей меры / чем реализована", key="card_text",
                          height=80)
-            k3, k4 = st.columns([1, 2])
+            k3, k4 = st.columns([1, 2], vertical_alignment="bottom")
             k3.date_input("Плановый срок (для нереализованной)", key="card_due", format="DD.MM.YYYY",
                           **({} if "card_due" in ss else {"value": None}))
-            k4.write("")
-            k4.button("Сохранить сведения о мере", on_click=save_card, disabled=not ss.get("card_code"))
+            k4.button("Сохранить сведения о мере", on_click=save_card, disabled=not ss.get("card_code"),
+                      type="primary")
             special = [(c, STATUS_LABELS[status_of[c]], ss.mst[c]["text"]) for c in req_codes if c in ss.mst]
             special += [(c, "Сведения", (d.get("means") or "") + (f" срок: {d['due']}" if d.get("due") else ""))
                         for c, d in ss.mdet.items() if c in req_codes and c not in ss.mst]
@@ -723,7 +883,10 @@ with tab3:
             cls = "full" if closed == len(appl) else ("part" if closed else "none")
             chips.append(f'<span class="chip {cls}" title="{group_title(rules, group)}">'
                          f'{group} {closed}/{len(appl)}</span>')
-        st.markdown(f'<div class="chips">{"".join(chips)}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="chips">{"".join(chips)}</div><div class="legend">Группы мер: '
+                    f'<span style="color:var(--ok)">●</span> все закрыты · <span style="color:var(--c2)">●</span> '
+                    f'частично · <span style="color:var(--c1)">●</span> ни одной; число — закрыто / применимо. '
+                    f'Наведите на группу, чтобы увидеть её название.</div>', unsafe_allow_html=True)
         shown_any = False
         for group in dict.fromkeys(m["group"] for m in required):
             gm = [m for m in required if m["group"] == group]
@@ -735,12 +898,14 @@ with tab3:
             if not visible:
                 continue
             shown_any = True
-            with st.expander(f"{group} · {group_title(rules, group)} ({len(codes)} мер)",
+            with st.expander(f"{group} · {group_title(rules, group)} · {plural(len(codes), ('мера', 'меры', 'мер'))}",
                              expanded=bool(q) or only_open):
                 st.progress(closed / len(appl) if appl else 1.0, text=f"Закрыто {closed} из {len(appl)}")
                 b1, b2, _ = st.columns([1, 1, 3])
-                b1.button("Отметить все", key=f"all_{group}", on_click=set_group, args=(codes, True))
-                b2.button("Снять все", key=f"none_{group}", on_click=set_group, args=(codes, False))
+                b1.button("Отметить все", key=f"all_{group}", on_click=set_group, args=(codes, True),
+                          icon=":material/done_all:", width="stretch")
+                b2.button("Снять все", key=f"none_{group}", on_click=set_group, args=(codes, False),
+                          icon=":material/remove_done:", width="stretch")
                 for m in visible:
                     c = m["code"]
                     st.checkbox(f"**{c}** — {m['title']}", key=f"m_{c}", on_change=on_measure_check, args=(c,),
@@ -755,29 +920,38 @@ with tab3:
         if not shown_any and only_open and not q:
             st.success("Все применимые меры базового набора закрыты.")
         elif not shown_any:
-            st.info("Ничего не найдено.")
+            st.info("По запросу «" + search.strip() + "» мер не найдено — проверьте код (например, УПД.3) "
+                    "или очистите поле поиска.")
+        hint("Далее — вкладка <b>«4. Система безопасности»</b>: организационные требования приказа № 235.")
 
 # ================= Шаг 4. Система безопасности (приказ № 235) =================
 
 with tab4:
     if not significant:
-        st.info("Требования приказа ФСТЭК № 235 к системе безопасности относятся к значимым объектам. "
-                "Сначала определите категорию на шаге «Показатели».")
+        empty_state("Сначала нужна категория значимости",
+                    "Требования приказа ФСТЭК России № 235 к системе безопасности относятся к значимым "
+                    "объектам. Определите категорию на вкладке «2. Показатели значимости».")
     else:
         sec_appl = len(REQS) - len(sec_na)
         st.markdown("Организационные требования к системе безопасности значимых объектов субъекта КИИ "
-                    "(приказ ФСТЭК России № 235). Требования относятся к субъекту в целом (п. 3).")
+                    "(приказ ФСТЭК России № 235). Требования относятся к субъекту в целом (п. 3). "
+                    "Отметьте выполненные; условные требования, не относящиеся к субъекту, отметьте "
+                    "«не применимо».")
         st.progress(len(sec_done) / sec_appl if sec_appl else 1.0,
                     text=f"Выполнено {len(sec_done)} из {sec_appl} применимых требований")
         for section in dict.fromkeys(r["section"] for r in REQS):
             items = [r for r in REQS if r["section"] == section]
-            with st.expander(f"{section} ({len(items)} треб.)"):
+            with st.expander(f"{section} · {plural(len(items), ('требование', 'требования', 'требований'))}"):
+                n_done = sum(1 for r in items if ss.get(f"sec_{r['id']}"))
+                n_appl = len(items) - sum(1 for r in items if ss.get(f"secna_{r['id']}"))
+                st.caption(f"Выполнено {n_done} из {n_appl}")
                 for r in items:
                     st.checkbox(f"**{r['id']}** — {r['text']}", key=f"sec_{r['id']}", help=r["source"],
                                 on_change=toggle_req, args=(r["id"], "done"))
                     if r.get("condition"):
                         st.checkbox(f"Не применимо (требование действует, только если {r['condition']})",
                                     key=f"secna_{r['id']}", on_change=toggle_req, args=(r["id"], "na"))
+        hint("Далее — вкладка <b>«5. Отчёт»</b>: сформируйте отчёт о несоответствиях и выгрузите его в DOCX.")
 
 # ================= Шаг 5. Отчёт =================
 
@@ -785,7 +959,8 @@ with tab5:
     if validation.errors:
         st.error("Исправьте ошибки ввода в показателях " + ", ".join(validation.errors) +
                  " (шаг «Показатели») — пока они есть, отчёт не формируется.")
-    if st.button("Сформировать отчёт", type="primary", disabled=bool(validation.errors)):
+    if st.button("Сформировать отчёт", type="primary", disabled=bool(validation.errors),
+                 icon=":material/assignment:"):
         try:
             ss.report = assess(rules, ss.object_name or "Без названия", ss.sphere, values, state_now["implemented"],
                                statuses=state_now["statuses"], details=state_now["details"],
@@ -816,7 +991,16 @@ with tab5:
                                 ss.report.categorization.category, len(ss.report.required),
                                 len(ss.report.missing), round(seconds, 1)])
                 ss.saved = True
-                st.toast(f"Время оценки {seconds / 60:.1f} мин записано в журнал")
+                st.toast(f"Время оценки {seconds / 60:.1f} мин записано в журнал".replace(".", ","))
+
+    if "report" not in ss:
+        # шаги 3–4 нужны только значимому объекту
+        todo = [title for title, ok in steps[:4 if significant else 2] if not ok]
+        empty_state("Отчёт ещё не сформирован",
+                    "Нажмите «Сформировать отчёт» — система проверит введённые данные и покажет категорию "
+                    "с обоснованием, несоответствия по мерам и требованиям, а также предложит выгрузку "
+                    "в DOCX. Отчёт можно пересоздать в любой момент после изменений."
+                    + (" Ещё не заполнены шаги:" if todo else ""), todo)
 
     if "report" in ss:
         r = ss.report
@@ -829,7 +1013,15 @@ with tab5:
         verdict = ("Объект не подлежит категорированию" if not rc.is_kii_subject
                    else "Категория значимости не присваивается" if rc.category is None
                    else f"Категория значимости: {ROMAN[rc.category]}")
-        st.markdown(f"### {badge(rc.category, verdict)}", unsafe_allow_html=True)
+        if not rc.is_kii_subject:
+            v_sub = "Сфера деятельности не входит в перечень 187-ФЗ (ст. 2, п. 8)."
+        elif rc.category is None:
+            v_sub = "Ни один показатель не достиг порогов категорий ПП № 127."
+        else:
+            v_sub = (f"Определяет показатель {', '.join(x.indicator_id for x in rc.decisive)}; базовый набор — "
+                     f"{plural(len(r.required), ('мера', 'меры', 'мер'))} приказа № 239.")
+        st.markdown(f'<div class="verdict cat{rc.category or 0}"><div class="vl">Итог категорирования</div>'
+                    f'<div class="vt">{verdict}</div><div class="vs">{v_sub}</div></div>', unsafe_allow_html=True)
         with st.expander("Обоснование категории", expanded=True):
             for line in rc.explanation:
                 st.markdown(f"• {line}")
@@ -837,53 +1029,69 @@ with tab5:
             st.info(n)
 
         if r.required:
-            m1, m2, m3, m4, m5 = st.columns(5)
-            m1.metric("Обязательных мер", len(r.required))
-            m2.metric("Не применяются", len(r.not_applicable))
-            m3.metric("Реализовано", r.covered_count - len(r.compensated),
-                      help=f"Ещё компенсировано: {len(r.compensated)}" if r.compensated else None)
-            m4.metric("Несоответствий", len(r.missing))
-            m5.metric("Соответствие", pct_text(r.compliance_percent))
+            st.markdown("#### Меры защиты (приказ ФСТЭК № 239)")
+            # метрики в строке с переносом: на узком экране не обрезаются
+            with st.container(horizontal=True, wrap=True, key="metrics"):
+                st.metric("Обязательных мер", len(r.required), width=150)
+                st.metric("Не применяются", len(r.not_applicable), width=150)
+                st.metric("Реализовано", r.covered_count - len(r.compensated), width=150,
+                          help=f"Ещё компенсировано: {len(r.compensated)}" if r.compensated else None)
+                st.metric("Несоответствий", len(r.missing), width=150)
+                st.metric("Соответствие", pct_text(r.compliance_percent), width=150)
 
-            g1, g2 = st.columns([1, 2], gap="large")
-            pie = pd.DataFrame({"Статус": ["Реализовано", "Компенсировано", "Не реализовано"],
-                                "Мер": [r.covered_count - len(r.compensated), len(r.compensated), len(r.missing)]})
-            colors = {"Реализовано": "#2e9e5b", "Компенсировано": "#3b7dd8", "Не реализовано": "#d64545"}
-            pie = pie[pie["Мер"] > 0]  # в легенде только встречающиеся статусы
+            # две диаграммы рядом; на узком экране вторая переносится под первую (CSS .st-key-charts)
+            g1, g2 = st.container(key="charts").columns([1, 1.9], gap="large")
+            counts = {"Реализовано": r.covered_count - len(r.compensated), "Компенсировано": len(r.compensated),
+                      "Не реализовано": len(r.missing)}
+            colors = {"Реализовано": COLORS["done"], "Компенсировано": COLORS["compensated"],
+                      "Не реализовано": COLORS["missing"]}
+            # в легенде только встречающиеся статусы, сразу с числом мер
+            pie = pd.DataFrame([{"Статус": f"{k} — {v}", "Мер": v, "c": colors[k]} for k, v in counts.items() if v])
             base = alt.Chart(pie).encode(
                 theta=alt.Theta("Мер:Q", stack=True),
-                color=alt.Color("Статус:N", scale=alt.Scale(domain=list(pie["Статус"]),
-                                                            range=[colors[s] for s in pie["Статус"]]),
-                                legend=alt.Legend(orient="bottom", direction="vertical", title=None)),
+                color=alt.Color("Статус:N", scale=alt.Scale(domain=list(pie["Статус"]), range=list(pie["c"])),
+                                legend=alt.Legend(orient="bottom", direction="vertical", title=None,
+                                                  labelFontSize=13, symbolType="circle")),
                 tooltip=["Статус", "Мер"])
             center = alt.Chart(pd.DataFrame({"t": [pct_text(r.compliance_percent).replace(" ", "")]})).mark_text(
-                fontSize=26, fontWeight="bold", color="#1f2328").encode(text="t:N")
-            g1.altair_chart((base.mark_arc(innerRadius=62, outerRadius=95) + center).properties(height=260),
-                            width="stretch")
+                fontSize=26, fontWeight="bold", color=COLORS["ink"]).encode(text="t:N")
+            with g1:
+                st.markdown("**Статус мер базового набора**")
+                st.altair_chart((base.mark_arc(innerRadius=62, outerRadius=95, stroke="#fff", strokeWidth=2)
+                                 + center).properties(height=280), width="stretch")
+            with g2:
+                st.markdown("**Несоответствия по группам мер**")
+                if r.missing:
+                    by_group = pd.DataFrame([{"Группа": f"{m['group']} · {group_title(rules, m['group'])}"}
+                                             for m in r.missing]).value_counts().reset_index(name="Несоответствий")
+                    # подписи чисел у столбцов вместо оси: читается сразу, без сетки
+                    bar = alt.Chart(by_group).encode(
+                        x=alt.X("Несоответствий:Q", axis=None,
+                                scale=alt.Scale(domain=[0, int(by_group["Несоответствий"].max()) * 1.15])),
+                        y=alt.Y("Группа:N", sort="-x", title=None,
+                                axis=alt.Axis(labelLimit=340, labelFontSize=12, labelColor=COLORS["ink"],
+                                              ticks=False, domain=False),
+                                scale=alt.Scale(paddingInner=0.35)),
+                        tooltip=["Группа", "Несоответствий"])
+                    chart = (bar.mark_bar(color=COLORS["missing"], cornerRadiusEnd=4)
+                             + bar.mark_text(align="left", dx=5, fontSize=12, fontWeight="bold",
+                                             color=COLORS["ink"]).encode(text="Несоответствий:Q"))
+                    st.altair_chart(chart.properties(height=alt.Step(30)).configure_view(stroke=None),
+                                    width="stretch")
+                else:
+                    st.success("Все применимые меры базового набора закрыты — несоответствий не выявлено.")
             if r.missing:
-                by_group = pd.DataFrame([{"Группа": f"{m['group']} · {group_title(rules, m['group'])}"}
-                                         for m in r.missing]).value_counts().reset_index(name="Несоответствий")
-                bars = alt.Chart(by_group).mark_bar(color="#d64545", cornerRadiusEnd=4).encode(
-                    x=alt.X("Несоответствий:Q", axis=alt.Axis(tickMinStep=1, format="d")),
-                    y=alt.Y("Группа:N", sort="-x", title=None, axis=alt.Axis(labelLimit=380),
-                            scale=alt.Scale(paddingInner=0.45)),
-                    tooltip=["Группа", "Несоответствий"]).properties(
-                    title="Несоответствия по группам мер", height=alt.Step(34))
-                g2.altair_chart(bars, width="stretch")
-                st.markdown("#### Перечень несоответствий")
-                st.dataframe(pd.DataFrame([{"Мера": m["code"], "Содержание": m["title"],
-                                            "Группа": group_title(rules, m["group"]),
-                                            "Плановый срок": r.details.get(m["code"], {}).get("due") or ""}
-                                           for m in r.missing]), hide_index=True, width="stretch")
-            else:
-                g2.success("Все применимые меры базового набора закрыты — несоответствий не выявлено.")
+                st.markdown(f"#### Перечень несоответствий · {len(r.missing)}")
+                st.markdown(html_table([{"Мера": m["code"], "Содержание": m["title"],
+                                         "Группа": group_title(rules, m["group"]),
+                                         "Плановый срок": r.details.get(m["code"], {}).get("due") or "—"}
+                                        for m in r.missing], scroll=True), unsafe_allow_html=True)
             for title, items in (("Исключены при адаптации базового набора (п. 23)", r.not_applicable),
                                  ("Компенсирующие меры (п. 26)", r.compensated)):
                 if items:
                     st.markdown(f"#### {title}")
-                    st.dataframe(pd.DataFrame([{"Мера": i["measure"]["code"], "Содержание": i["measure"]["title"],
-                                                "Обоснование": i["text"]} for i in items]),
-                                 hide_index=True, width="stretch")
+                    st.markdown(html_table([{"Мера": i["measure"]["code"], "Содержание": i["measure"]["title"],
+                                             "Обоснование": i["text"]} for i in items]), unsafe_allow_html=True)
         else:
             st.info("Требования к значимым объектам не применяются: категория не присвоена.")
 
@@ -892,27 +1100,37 @@ with tab5:
             st.markdown("#### Система безопасности (приказ ФСТЭК № 235)")
             st.progress(len(s.done) / s.applicable_count if s.applicable_count else 1.0,
                         text=f"Выполнено {len(s.done)} из {s.applicable_count} применимых требований")
-            if s.missing:
-                st.dataframe(pd.DataFrame([{"Код": q["id"], "Невыполненное требование": q["text"],
-                                            "Источник": q["source"]} for q in s.missing]),
-                             hide_index=True, width="stretch")
+            if not s.done and not s.not_applicable:
+                st.info("Чек-лист требований приказа № 235 не заполнялся — отметьте выполненные требования "
+                        "на вкладке «4. Система безопасности». Перечень всех требований — в отчёте DOCX.")
+            elif s.missing:
+                with st.expander(f"Невыполненные требования · {len(s.missing)}"):
+                    st.markdown(html_table([{"Код": q["id"], "Требование": q["text"], "Источник": q["source"]}
+                                            for q in s.missing], scroll=True), unsafe_allow_html=True)
 
         if r.warnings:
-            with st.expander(f"⚠️ Замечания к тексту нормативных документов ({len(r.warnings)})"):
+            with st.expander(f"Замечания к тексту нормативных документов ({len(r.warnings)})",
+                             icon=":material/warning:"):
                 for w in r.warnings:
                     st.markdown(f"• {w}")
-        st.caption("Документы базы правил: " + "; ".join(r.editions))
 
-        d1, d2, d3, d4 = st.columns(4)
+        st.markdown("#### Выгрузка результатов")
+        st.caption("DOCX открывается в Word. Файл данных (JSON) позволяет продолжить оценку позже — "
+                   "вкладка 1, «Продолжить сохранённую оценку».")
         stamp = f"{datetime.now():%Y%m%d_%H%M}"
         docx_mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        d1.download_button("📄 Отчёт (DOCX)", to_docx(rules, r, ctx["sphere"], ctx["values"], ctx["attributes"]),
-                           file_name=f"отчёт_{stamp}.docx", type="primary", width="stretch", mime=docx_mime)
-        d2.download_button("📝 Черновик акта (DOCX)",
-                           to_act_docx(rules, r, ctx["sphere"], ctx["values"], ctx["attributes"]),
-                           file_name=f"акт_категорирования_{stamp}.docx", width="stretch", mime=docx_mime,
-                           help="Состав сведений — по п. 16 Правил категорирования (ПП РФ № 127)")
-        d3.download_button("Отчёт (Markdown)", to_markdown(rules, r), file_name=f"отчёт_{stamp}.md",
-                           mime="text/markdown", width="stretch")
-        d4.download_button("Данные оценки (JSON)", json.dumps(state_now, ensure_ascii=False, indent=2),
-                           file_name=f"оценка_{stamp}.json", mime="application/json", width="stretch")
+        with st.container(horizontal=True, wrap=True, key="downloads"):
+            st.download_button("Отчёт (DOCX)", to_docx(rules, r, ctx["sphere"], ctx["values"], ctx["attributes"]),
+                               file_name=f"отчёт_{stamp}.docx", type="primary", mime=docx_mime,
+                               icon=":material/description:")
+            st.download_button("Черновик акта (DOCX)",
+                               to_act_docx(rules, r, ctx["sphere"], ctx["values"], ctx["attributes"]),
+                               file_name=f"акт_категорирования_{stamp}.docx", mime=docx_mime,
+                               icon=":material/contract:",
+                               help="Состав сведений — по п. 16 Правил категорирования (ПП РФ № 127)")
+            st.download_button("Отчёт (Markdown)", to_markdown(rules, r), file_name=f"отчёт_{stamp}.md",
+                               mime="text/markdown", icon=":material/article:")
+            st.download_button("Данные оценки (JSON)", json.dumps(state_now, ensure_ascii=False, indent=2),
+                               file_name=f"оценка_{stamp}.json", mime="application/json",
+                               icon=":material/data_object:")
+        st.caption("Документы базы правил: " + "; ".join(r.editions))
