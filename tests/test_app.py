@@ -141,11 +141,11 @@ def test_example_object_full_flow(app):
 
 def test_filter_keeps_hidden_checkmarks(app):
     load_example(app, "obj02")
-    assert checked(app) == 108
+    assert checked(app) == 106
     app.text_input(key="flt_search").set_value("УПД.3").run()
     assert [c.key for c in measure_boxes(app)] == ["m_УПД.3"]
     app.text_input(key="flt_search").set_value("").run()
-    assert checked(app) == 108  # отметки скрытых мер не потерялись
+    assert checked(app) == 106  # отметки скрытых мер не потерялись
 
 
 def test_only_open_measures(app):
@@ -205,10 +205,10 @@ def test_card_not_applicable_and_compensated(app):
     open_card(app, "ЗИС.32", "not_applicable", "беспроводных сетей нет")
     open_card(app, "АВЗ.2", "compensated", "фильтрация почты на шлюзе")
     card = texts(m for m in app.markdown if "Меры базового набора" in m.value)
-    assert "1 / 86" in card and "не применяется: 1" in card  # АВЗ.2 закрыта компенсирующей мерой
+    assert "1 / 89" in card and "не применяется: 1" in card  # АВЗ.2 закрыта компенсирующей мерой
     button(app, "Сформировать отчёт").click().run()
     metrics = {m.label: m.value for m in app.metric}
-    assert metrics["Не применяются"] == "1" and metrics["Несоответствий"] == "85"
+    assert metrics["Не применяются"] == "1" and metrics["Несоответствий"] == "88"
 
 
 def test_checking_measure_clears_special_status(app):
@@ -244,7 +244,7 @@ def test_security_done_and_na_are_exclusive(app):
     assert app.session_state["sec_С.3"] and not app.session_state["secna_С.3"]
     button(app, "Сформировать отчёт").click().run()
     assert not app.exception
-    assert any("Выполнено 1 из 46" in str(p.proto.text) for p in app.get("progress"))
+    assert any("Выполнено 1 из 48" in str(p.proto.text) for p in app.get("progress"))
 
 
 # ---------------- перечень объектов ----------------
@@ -256,7 +256,7 @@ def test_registry_save_and_open(app):
     button(app, "Начать новую оценку").click().run()
     assert summary_category(app) == "cat0"
     button(app, "Открыть").click().run()
-    assert summary_category(app) == "cat2" and checked(app) == 108
+    assert summary_category(app) == "cat2" and checked(app) == 106
 
 
 # ---------------- режим эксперимента ----------------
@@ -271,7 +271,7 @@ def test_experiment_trial_is_logged(app):
     button(app, "Сформировать отчёт").click().run()
     row = trials.read(trials.SYSTEM_LOG)[-1]
     assert (row["participant"], row["object_id"], row["category_ok"]) == ("Участник 1", "obj01", "1")
-    assert int(row["fn"]) == 0 and int(row["fp"]) == 87 - 3  # меры не отмечены — лишние несоответствия
+    assert int(row["fn"]) == 0 and int(row["fp"]) == 90 - 3  # меры не отмечены — лишние несоответствия
     assert "Записано" in texts(app.success)
 
 
@@ -299,7 +299,7 @@ def test_rule_editions_shown(app):
     """Боковая панель показывает редакции документов и итог проверки базы правил."""
     captions = texts(app.sidebar.caption)
     assert "Постановление Правительства РФ от 08.02.2018 № 127" in captions
-    assert "ошибок 0, замечаний к тексту документов 7" in captions
+    assert "ошибок 0, замечаний к тексту документов 5" in captions
 
 
 def test_date_without_edition_falls_back_to_today(app):

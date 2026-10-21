@@ -8,6 +8,7 @@ from pathlib import Path
 import docx
 import pytest
 
+from conftest import ORIGINAL_DATE
 from engine import registry, trials
 from engine.assessment import COMPENSATED, NOT_APPLICABLE, assess, to_markdown
 from engine.measures import required_measures
@@ -38,8 +39,8 @@ def test_not_applicable_excluded_from_base():
     rep = assess3(impl, statuses={"ЗИС.32": {"status": NOT_APPLICABLE, "text": "беспроводных сетей нет"}})
     assert rep.missing_codes == ["АУД.2"]
     assert [i["measure"]["code"] for i in rep.not_applicable] == ["ЗИС.32"]
-    assert rep.applicable_count == 86
-    assert rep.compliance_percent == round(100 * 85 / 86, 1)
+    assert rep.applicable_count == 89
+    assert rep.compliance_percent == round(100 * 88 / 89, 1)
 
 
 def test_compensated_counts_as_covered():
@@ -87,24 +88,31 @@ def test_gis_ispdn_notice():
 
 def test_security_rules_structure():
     reqs = RULES.security["requirements"]
-    assert len(reqs) == 46
+    assert len(reqs) == 48
     assert all("№ 235, п." in r["source"] for r in reqs)
-    assert {r["id"] for r in reqs if r.get("condition")} == {"С.3", "С.11", "С.14", "С.15", "С.17",
-                                                             "Т.6", "Д.7", "Ф.12"}
-    assert len({r["id"] for r in reqs}) == 46
+    assert {r["id"] for r in reqs if r.get("condition")} == {"С.3", "С.11", "С.14", "С.15", "С.17", "С.18",
+                                                             "Т.6", "Т.8", "Д.7", "Ф.12"}
+    assert len({r["id"] for r in reqs}) == 48
 
 
 def test_security_rules_match_notes():
+    """Чек-лист выжимки = пакет действующей редакции; таблица отличий + чек-лист = пакет редакции 2019 г."""
     text = (ROOT / "notes" / "fstek235_requirements.md").read_text(encoding="utf-8")
-    rows = re.findall(r"^\| ([СТДФ]\.\d+) \| (.+?) \| (.+?) \|", text, re.M)
+    checklist, diff = text.split("## Редакция 2019 г.")
+    rows = re.findall(r"^\| ([СТДФ]\.\d+) \| (.+?) \| (.+?) \|", checklist, re.M)
     assert [(i, t) for i, t, _ in rows] == [(r["id"], r["text"]) for r in RULES.security["requirements"]]
+    old_texts = dict((i, t) for i, t, _ in re.findall(r"^\| ([СТДФ]\.\d+) \| (.+?) \| (.+?) \|$", diff, re.M))
+    added = {"С.18", "Т.8"}
+    expected = [(i, old_texts.get(i, t)) for i, t, _ in rows if i not in added]
+    original = load_rules(on_date=ORIGINAL_DATE).security["requirements"]
+    assert expected == [(r["id"], r["text"]) for r in original]
 
 
 def test_assess_security():
     s = assess_security(RULES, ["С.1", "Д.1"], ["С.3"])
     assert [r["id"] for r in s.done] == ["С.1", "Д.1"]
-    assert s.applicable_count == 45 and len(s.missing) == 43
-    assert s.percent == round(100 * 2 / 45, 1)
+    assert s.applicable_count == 47 and len(s.missing) == 45
+    assert s.percent == round(100 * 2 / 47, 1)
 
 
 @pytest.mark.parametrize("done, na, fragment", [
@@ -137,7 +145,7 @@ def test_markdown_contains_new_sections():
     md = to_markdown(RULES, full_report())
     for fragment in ("Меры, исключённые при адаптации", "беспроводных сетей нет", "Компенсирующие меры",
                      "2027-06-30", "приказ ФСТЭК № 235", "п. 24", "Документы базы правил",
-                     "ред. приказа ФСТЭК России от 09.08.2018 № 138"):
+                     "в ред. от 28.08.2024"):
         assert fragment in md, fragment
 
 
@@ -160,7 +168,7 @@ def test_act_docx_follows_p16():
 def test_card_has_no_answers():
     obj = {"id": "obj99", "name": "Тест", "sphere": "healthcare", "indicators": {"1": 30, "2а": "mo"}}
     text = docx_text(card_docx(RULES, obj, ["ИАФ.0", "ИАФ.1"]))
-    assert "30 человек" in text and "Вся территория одного муниципального" in text and "ИАФ.0, ИАФ.1" in text
+    assert "30 человек" in text and "В пределах территории одного муниципального" in text and "ИАФ.0, ИАФ.1" in text
     assert "категория" not in text.lower().replace("категорию значимости", "")  # без ответа
 
 
@@ -226,7 +234,7 @@ def test_compensation_by_unimplemented_measure_noted():
 
 def test_policy_excluded_while_group_remains_noted():
     rep = assess3([], statuses={"ИАФ.0": {"status": NOT_APPLICABLE, "text": "политика не нужна"}})
-    assert any("ИАФ.0 (политика группы)" in n for n in rep.notices)
+    assert any("ИАФ.0 (правила и процедуры группы)" in n for n in rep.notices)
 
 
 def test_unfilled_indicators_listed_and_noted():
@@ -235,4 +243,4 @@ def test_unfilled_indicators_listed_and_noted():
     assert any("Не заполнены и считаются неприменимыми" in e for e in rep.categorization.explanation)
     rep = assess(RULES, "x", "healthcare", {"1": 30}, [])
     assert not any("Ни один показатель" in n for n in rep.notices)
-    assert "1" not in rep.categorization.not_filled and len(rep.categorization.not_filled) == 20
+    assert "1" not in rep.categorization.not_filled and len(rep.categorization.not_filled) == 29

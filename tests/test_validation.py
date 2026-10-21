@@ -5,13 +5,16 @@
 регулярным выражением в интервал, НЕ используя числа min/max из YAML и код движка.
 С этим эталоном сверяются и числа в базе правил, и ответы движка —
 так ловятся ошибки переноса границ из документа в YAML.
+Сверка с эталоном выполняется для обеих редакций ПП № 127 (исходной и действующей).
 """
 
 import math
 import random
+import re
 
 import pytest
 
+from conftest import ORIGINAL_DATE
 from engine.assessment import assess
 from engine.categorization import categorize, highest
 from engine.dataset import implemented_codes, load_objects
@@ -20,8 +23,17 @@ from engine.validation import (InputError, boundary_note, check_value, describe,
                                validate)
 
 RULES = load_rules()
+RULES_2018 = load_rules(on_date=ORIGINAL_DATE)
 NUMBER = [i for i in RULES.categorization["indicators"] if i["type"] == "number"]
 CHOICE = [i for i in RULES.categorization["indicators"] if i["type"] == "choice"]
+# (база правил, правило) — числовые показатели обеих редакций для сверки с эталоном
+NUMBER_ALL = [(RULES, r) for r in NUMBER] + \
+             [(RULES_2018, r) for r in RULES_2018.categorization["indicators"] if r["type"] == "number"]
+
+
+def _ids(item) -> str:
+    rules, rule = item
+    return f"{rules.packages['categorization'].effective_from:%Y}-{rule['id']}"
 
 
 # ---------------- независимый эталон по тексту ПП № 127 ----------------
@@ -62,8 +74,9 @@ def boundaries(rule: dict) -> list[float]:
 
 # ---------------- 1. текст ПП № 127 ↔ числа в YAML ----------------
 
-@pytest.mark.parametrize("rule", NUMBER, ids=lambda r: r["id"])
-def test_yaml_numbers_match_document_text(rule):
+@pytest.mark.parametrize("item", NUMBER_ALL, ids=_ids)
+def test_yaml_numbers_match_document_text(item):
+    _, rule = item
     for k, r in rule["values"].items():
         p = parse_text(r["text"])
         assert r.get("min") == p.get("min"), (rule["id"], k)
@@ -84,21 +97,23 @@ def _probe_points(rule):
     return sorted(p for p in pts if p >= 0)
 
 
-@pytest.mark.parametrize("rule", NUMBER, ids=lambda r: r["id"])
-def test_boundaries_match_oracle(rule):
+@pytest.mark.parametrize("item", NUMBER_ALL, ids=_ids)
+def test_boundaries_match_oracle(item):
+    rules, rule = item
     for v in _probe_points(rule):
-        got = categorize(RULES, "healthcare", {rule["id"]: v}).category
+        got = categorize(rules, "healthcare", {rule["id"]: v}).category
         assert got == oracle(rule, v), f"показатель {rule['id']}, значение {v!r}"
 
 
 # ---------------- 3. случайные значения (fuzz) ----------------
 
-@pytest.mark.parametrize("rule", NUMBER, ids=lambda r: r["id"])
-def test_fuzz_random_values(rule):
+@pytest.mark.parametrize("item", NUMBER_ALL, ids=_ids)
+def test_fuzz_random_values(item):
+    rules, rule = item
     rnd = random.Random(42)  # фиксированное зерно — тест воспроизводим
     for _ in range(500):
         v = 10 ** rnd.uniform(-4, 6)
-        got = categorize(RULES, "healthcare", {rule["id"]: v}).category
+        got = categorize(rules, "healthcare", {rule["id"]: v}).category
         assert got in (None, 1, 2, 3)
         assert got == oracle(rule, v)
 
@@ -106,14 +121,17 @@ def test_fuzz_random_values(rule):
 # ---------------- 4. монотонность шкал ----------------
 
 def test_documented_anomalies_are_exactly_known():
-    """Замечания к тексту ПП № 127 есть ровно у трёх показателей (см. notes/)."""
-    assert {i["id"] for i in RULES.categorization["indicators"] if i.get("warning")} == {"5", "9а", "14"}
+    """Замечания к тексту ПП № 127 исходной редакции — ровно у трёх показателей (см. notes/);
+    в действующей редакции эти дефекты устранены."""
+    assert {i["id"] for i in RULES_2018.categorization["indicators"] if i.get("warning")} == {"5", "9а", "14"}
+    assert {i["id"] for i in RULES.categorization["indicators"] if i.get("warning")} == set()
 
 
 @pytest.mark.parametrize("rule", [r for r in NUMBER if not r.get("warning")], ids=lambda r: r["id"])
 def test_monotonic_scale(rule):
     """Для показателей без замечаний: чем дальше по шкале «тяжести», тем выше (или равна) категория."""
-    harm_grows_with_value = rule["values"][3].get("min", -math.inf) < rule["values"][1].get("min", math.inf)
+    # направление шкалы — по III и II категориям: II правее III — ущерб растёт с ростом значения
+    harm_grows_with_value = rule["values"][2].get("min", -math.inf) >= rule["values"][3].get("min", -math.inf)
     pts = _probe_points(rule)
     cats = [categorize(RULES, "healthcare", {rule["id"]: v}).category for v in pts]
     rank = [4 if c is None else c for c in cats]  # «без категории» ниже III
@@ -129,9 +147,10 @@ def test_monotonic_scale(rule):
     ("1", 10.5, "целым"),
     ("2б", -0.1, "меньше 0"),
     ("8", 100.5, "100 %"),
-    ("9а", 150, "100 %"),
+    ("9", 150, "100 %"),
     ("13а", 101, "100 %"),
-    ("5", float("nan"), "конечным"),
+    ("10(5)", 30.5, "целым"),
+    ("5а", float("nan"), "конечным"),
     ("14", float("inf"), "конечным"),
     ("1", "пятьдесят", "ожидается число"),
     ("1", True, "ожидается число"),
@@ -148,7 +167,8 @@ def test_unknown_indicator_is_error():
 
 
 @pytest.mark.parametrize("ind_id, value", [
-    ("1", 0), ("1", 50), ("8", 100), ("9а", 0.005), ("13б", 250), ("10", 1000), ("2а", "mo"),
+    ("1", 0), ("1", 50), ("8", 100), ("9", 0.0005), ("13б", 250), ("10", 1000), ("2а", "mo"),
+    ("10(1)", 0.5), ("3г", "oti_1"),
 ])
 def test_valid_input_has_no_errors(ind_id, value):
     errs, warns = check_value(RULES.indicator(ind_id), value)
@@ -157,13 +177,13 @@ def test_valid_input_has_no_errors(ind_id, value):
 
 # ---------------- 6. проверка ввода: предупреждения ----------------
 
-@pytest.mark.parametrize("ind_id", ["2б", "3б", "4б", "11б"])
+@pytest.mark.parametrize("ind_id", ["2б", "3б", "4а", "11б"])
 def test_people_in_units_instead_of_thousands_warns(ind_id):
     errs, warns = check_value(RULES.indicator(ind_id), 300000)  # ввели 300 тыс. человек в человеках
     assert errs == [] and any("ТЫСЯЧАХ" in w for w in warns)
 
 
-@pytest.mark.parametrize("ind_id", ["5", "14"])
+@pytest.mark.parametrize("ind_id", ["5а", "14"])
 def test_hours_more_than_year_warns(ind_id):
     errs, warns = check_value(RULES.indicator(ind_id), 9000)
     assert errs == [] and warns
@@ -194,23 +214,36 @@ def test_reference_objects_are_valid_input(obj):
 
 # ---------------- 7а. условия применимости показателей ----------------
 
-CONDITIONAL = {"8": "state_org", "10": "financial_org", "13а": "defense_order", "13б": "defense_order",
-               "14": "defense_is"}
+CONDITIONAL = {"8": "state_org", "10": "financial_org", "10(1)": "central_counterparty",
+               "10(2)": "central_depository", "10(3)": "pension_fund", "10(4)": "insurer",
+               "10(5)": "info_exchange_operator", "10(6)": "microfinance", "10(7)": "credit_bureau",
+               "13а": "defense_order", "13б": "defense_order", "13(1)": "defense_order", "14": "defense_is"}
 
 
 def test_conditions_in_rules():
     """Условные показатели — ровно те, у которых условие записано в формулировке Перечня."""
-    assert {i["id"]: i["applies_if"] for i in RULES.categorization["indicators"] if i.get("applies_if")}         == CONDITIONAL
+    assert {i["id"]: i["applies_if"] for i in RULES.categorization["indicators"] if i.get("applies_if")} \
+        == CONDITIONAL
     for c in RULES.categorization["conditions"]:
         assert c["source"].startswith("ПП РФ № 127, Перечень показателей, п.")
     for ind_id, cond_id in CONDITIONAL.items():
-        num = ind_id.rstrip("абв")
-        assert RULES.condition(cond_id)["source"].endswith(f"п. {num}")
+        num = re.match(r"\d+(\(\d\))?", ind_id).group()  # «13а» → «13», «10(1)» → «10(1)»
+        assert re.search(rf"п\. ([\d()]+, )*{re.escape(num)}(?![\d(])", RULES.condition(cond_id)["source"]), ind_id
+
+
+def first_category_value(rule: dict):
+    """Значение показателя, дающее I категорию (для проверок условий применимости)."""
+    if rule["type"] == "choice":
+        return next(o["id"] for o in rule["options"] if o["category"] == 1)
+    rng = rule["values"][1]
+    if "min" in rng:
+        return rng["min"] + (0 if rng.get("min_incl") else 1)
+    return rng["max"] if rng.get("max_incl") else rng["max"] / 2
 
 
 @pytest.mark.parametrize("ind_id, cond_id", CONDITIONAL.items())
 def test_conditional_indicator_requires_condition(ind_id, cond_id):
-    values = {ind_id: 20}
+    values = {ind_id: first_category_value(RULES.indicator(ind_id))}
     res = validate(RULES, values, {})
     assert ind_id in res.errors and "применяется, только если" in res.errors[ind_id][0]
     assert validate(RULES, values, {cond_id: True}).ok

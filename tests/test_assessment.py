@@ -2,6 +2,7 @@
 
 import pytest
 
+from conftest import ORIGINAL_DATE
 from engine.assessment import assess, to_markdown
 from engine.dataset import implemented_codes, load_objects
 from engine.measures import extract_codes, required_measures
@@ -15,14 +16,19 @@ def rules():
     return load_rules()
 
 
+@pytest.fixture(scope="module")
+def rules_2018():
+    return load_rules(on_date=ORIGINAL_DATE)
+
+
 def codes(measures):
     return {m["code"] for m in measures}
 
 
 def test_required_by_category(rules):
-    assert len(required_measures(rules, 3)) == 87
-    assert len(required_measures(rules, 2)) == 110
-    assert len(required_measures(rules, 1)) == 124
+    assert len(required_measures(rules, 3)) == 90
+    assert len(required_measures(rules, 2)) == 108
+    assert len(required_measures(rules, 1)) == 117
     assert required_measures(rules, None) == []
 
 
@@ -35,11 +41,16 @@ def test_specific_measures(rules):
     assert "ИАФ.6" not in codes(required_measures(rules, 1))   # нет ни в одном базовом наборе
 
 
-def test_dns5_literal(rules):
-    # ДНС.5 по тексту приложения: категории 3 и 1, но не 2
-    assert "ДНС.5" in codes(required_measures(rules, 3))
-    assert "ДНС.5" not in codes(required_measures(rules, 2))
-    assert "ДНС.5" in codes(required_measures(rules, 1))
+def test_dns5_literal_original(rules_2018):
+    # ДНС.5 по тексту приложения исходной редакции: категории 3 и 1, но не 2
+    assert "ДНС.5" in codes(required_measures(rules_2018, 3))
+    assert "ДНС.5" not in codes(required_measures(rules_2018, 2))
+    assert "ДНС.5" in codes(required_measures(rules_2018, 1))
+
+
+def test_dns5_in_all_sets_current(rules):
+    # в действующей редакции ДНС.5 входит во все три набора — вложенность восстановлена
+    assert all("ДНС.5" in codes(required_measures(rules, k)) for k in (1, 2, 3))
 
 
 def test_missing_measures(rules):
@@ -47,7 +58,7 @@ def test_missing_measures(rules):
     rep = assess(rules, "тест", "healthcare", {"1": 30}, implemented)
     assert rep.categorization.category == 3
     assert set(rep.missing_codes) == {"АУД.2", "ИНЦ.1"}
-    assert rep.compliance_percent == round(100 * 85 / 87, 1)
+    assert rep.compliance_percent == round(100 * 88 / 90, 1)
 
 
 def test_extra_measures_do_not_matter(rules):
@@ -68,9 +79,10 @@ def test_no_category_no_requirements(rules):
     assert rep.compliance_percent is None
 
 
-def test_non_monotonic_warning_for_category_2(rules):
-    rep = assess(rules, "тест", "healthcare", {"1": 100}, [])
+def test_non_monotonic_warning_for_category_2(rules, rules_2018):
+    rep = assess(rules_2018, "тест", "healthcare", {"1": 100}, [])
     assert any("ДНС.5" in w for w in rep.warnings)
+    assert not any("ДНС.5" in w for w in assess(rules, "тест", "healthcare", {"1": 100}, []).warnings)
 
 
 def test_markdown_report(rules):
@@ -78,7 +90,7 @@ def test_markdown_report(rules):
     md = to_markdown(rules, rep)
     assert "Объект Х" in md
     assert "Категория значимости: 3" in md
-    assert "Несоответствий: 87" in md
+    assert "Несоответствий: 90" in md
 
 
 def test_metrics():

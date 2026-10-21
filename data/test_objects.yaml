@@ -1,7 +1,13 @@
 # Тестовый набор объектов КИИ с эталонными ответами.
 #
 # Объекты условные (вымышленные), значения показателей подобраны так, чтобы
-# покрыть все категории, граничные значения диапазонов и замечания к тексту ПП № 127.
+# покрыть все категории, граничные значения диапазонов и изменения действующих
+# редакций по сравнению с исходными (п. 5а, 9, 14 ПП № 127, наборы мер приказа № 239).
+#
+# Эталоны рассчитаны вручную по действующим редакциям (на 21.10.2026):
+#   ПП РФ № 127 в ред. от 07.11.2025, приказ ФСТЭК России № 239 в ред. от 28.08.2024,
+#   187-ФЗ в ред. от 07.04.2025. Эталоны по исходным редакциям — в истории git
+#   (коммит 567db51 и ранее).
 #
 # Поля объекта:
 #   sphere             — id сферы из пакета 187-ФЗ (rules/187-fz/)
@@ -35,7 +41,7 @@ objects:
     implemented: {base_category: 2, except: [СОВ.1, ЗИС.4]}
     expected_category: 2
     expected_missing: [СОВ.1, ЗИС.4]
-    reasoning: "п. 2а: выход за пределы МО в пределах субъекта → II; п. 2б: 300 тыс. ∈ [50; 1000) → III. Наивысшая — II."
+    reasoning: "п. 2а: выход за пределы МО в пределах субъекта → II; п. 2б: 300 тыс. ∈ [2; 1000) → III. Наивысшая — II."
 
   - id: obj03
     name: "Автоматизированная банковская система системно значимого банка"
@@ -44,8 +50,8 @@ objects:
     attributes: {financial_org: true}
     implemented: {base_category: 1, except: [АУД.5, АВЗ.5, ЗИС.31]}
     expected_category: 1
-    expected_missing: [АУД.5, АВЗ.5, ЗИС.31]
-    reasoning: "п. 10: 150 млн > 120 → I."
+    expected_missing: [АУД.5, АВЗ.5]
+    reasoning: "п. 10: 150 млн > 120 → I. ЗИС.31 не реализована, но в действующей редакции приказа № 239 не входит в базовый набор I категории — не несоответствие."
 
   - id: obj04
     name: "АСУ движением поездов метрополитена"
@@ -54,7 +60,7 @@ objects:
     implemented: {base_category: 2, except: []}
     expected_category: 2
     expected_missing: []
-    reasoning: "Граница: п. 3б: 1000 тыс. — «более или равно 1000» → II; п. 3а: территория МО → III. Наивысшая — II. Все меры реализованы."
+    reasoning: "Граница: п. 3б: 1000 тыс. — «более или равно 1000» → II; п. 3а: в пределах МО → III. Наивысшая — II. Все меры реализованы."
 
   - id: obj05
     name: "Информационная система учёта публикаций НИИ"
@@ -63,16 +69,16 @@ objects:
     implemented: {base_category: null}
     expected_category: null
     expected_missing: []
-    reasoning: "Ни один показатель неприменим → категория не присваивается (п. 6 абз. 3 Правил)."
+    reasoning: "Ни один показатель неприменим → категория не присваивается (п. 6 абз. 4 Правил)."
 
   - id: obj06
     name: "Сеть связи сельского района"
     sphere: telecom
-    indicators: {"1": 0, "4б": 49.9}
+    indicators: {"1": 0, "4а": 2.9}
     implemented: {base_category: null}
     expected_category: null
     expected_missing: []
-    reasoning: "Граница: п. 4б: 49,9 тыс. < 50 → не соответствует; п. 1: 0 < 1 → не соответствует. Категория не присваивается."
+    reasoning: "Граница: п. 4а: 2,9 тыс. абонентов < 3 → не соответствует; п. 1: 0 < 1 → не соответствует. Категория не присваивается."
 
   - id: obj07
     name: "MES-система металлургического комбината"
@@ -82,7 +88,7 @@ objects:
     implemented: {base_category: 3, except: [ЗНИ.8]}
     expected_category: 3
     expected_missing: [ЗНИ.8]
-    reasoning: "Граница: п. 8: 10% — «более 5, но менее или равно 10» → III (не II, т. к. II — «более 10»)."
+    reasoning: "Граница: п. 8: 10% — «более или равно 1, но менее или равно 10» → III (не II, т. к. II — «более 10»)."
 
   - id: obj08
     name: "АСУ ТП химического завода"
@@ -108,27 +114,27 @@ objects:
     indicators: {"14": 3}
     attributes: {defense_is: true}
     implemented: {base_category: 1, except: []}
-    expected_category: 1
+    expected_category: 3
     expected_missing: []
-    reasoning: "Замечание к ПП № 127: п. 14: 3 ч ∈ (2; 4] → III, но также «более 1» → I. По буквальному тексту и п. 6 Правил — I."
+    reasoning: "п. 14: 3 ч ∈ (2; 4] → III. (В исходной редакции I категория была «более 1» ч, и по буквальному тексту получалась I.) Реализован набор I категории — несоответствий нет."
 
   - id: obj11
-    name: "Информационная система администрирования поступлений в федеральный бюджет"
+    name: "Информационная система крупного налогоплательщика"
     sphere: finance
-    indicators: {"9а": 0.01}
+    indicators: {"9": 0.0006}
     implemented: {base_category: 2, except: [ИАФ.0]}
-    expected_category: 2
+    expected_category: 3
     expected_missing: [ИАФ.0]
-    reasoning: "Замечание к ПП № 127: п. 9а: 0,01% ∈ (0,001; 0,05] → III и ∈ (0,005; 0,1] → II. Наивысшая — II."
+    reasoning: "Граница: п. 9: 0,0006% — «более 0,0003, но менее или равно 0,0006» → III (II — «более 0,0006»)."
 
   - id: obj12
     name: "Региональный портал государственных услуг"
     sphere: telecom
-    indicators: {"1": 5, "5": 6}
-    implemented: {base_category: 3, except: [ПЛН.1, ИПО.2]}
-    expected_category: 3
+    indicators: {"1": 5, "5а": 6}
+    implemented: {base_category: 1, except: [ПЛН.1, ИПО.2]}
+    expected_category: 1
     expected_missing: [ПЛН.1, ИПО.2]
-    reasoning: "Замечание к ПП № 127: п. 5: ровно 6 ч не попадает ни в один диапазон; п. 1: 5 чел. → III. Итог — III."
+    reasoning: "Граница: п. 5а: ровно 6 ч — «менее или равно 6» → I (в исходной редакции значение 6 не попадало ни в один диапазон); п. 1: 5 чел. → III. Наивысшая — I."
 
   - id: obj13
     name: "Ситуационный центр федеральной госкорпорации"
@@ -137,7 +143,7 @@ objects:
     implemented: {base_category: 2, except: [ДНС.3]}
     expected_category: 2
     expected_missing: [ДНС.3]
-    reasoning: "п. 12: СЦ госкорпорации → II; п. 6: орган субъекта РФ → III. Наивысшая — II. ДНС.5 для II не обязательна по тексту приложения."
+    reasoning: "п. 12: СЦ госкорпорации → II; п. 6: орган субъекта РФ → III. Наивысшая — II."
 
   - id: obj14
     name: "Система управления скорой медицинской помощью"
@@ -157,3 +163,31 @@ objects:
     expected_category: 2
     expected_missing: [ОДТ.1, ОДТ.2]
     reasoning: "п. 11а: в пределах субъекта → II; граница п. 13а: 15% — «менее или равно 15» → II."
+
+  - id: obj16
+    name: "Клиринговая система центрального контрагента"
+    sphere: finance
+    indicators: {"10(1)": 0.5}
+    attributes: {central_counterparty: true}
+    implemented: {base_category: 3, except: [УПД.5]}
+    expected_category: 3
+    expected_missing: [УПД.5]
+    reasoning: "п. 10(1): 0,5 трлн руб. — «менее 1» → III (нижней границы у III категории нет)."
+
+  - id: obj17
+    name: "АСУ морского торгового порта"
+    sphere: transport
+    indicators: {"3в": dangerous_one_region, "3г": oti_1}
+    implemented: {base_category: 1, except: []}
+    expected_category: 1
+    expected_missing: []
+    reasoning: "п. 3в: опасные грузы в пределах одного субъекта → II; п. 3г: объект транспортной инфраструктуры 1-й категории → I. Наивысшая — I."
+
+  - id: obj18
+    name: "Система ведения ЕГРН в субъекте РФ"
+    sphere: real_estate
+    indicators: {"6": regional, "5а": 13}
+    implemented: {base_category: 3, except: [ЗИС.3]}
+    expected_category: 3
+    expected_missing: [ЗИС.3]
+    reasoning: "Сфера госрегистрации прав на недвижимость (187-ФЗ в ред. 2023–2025). п. 6: орган субъекта РФ → III; п. 5а: 13 ч ∈ (12; 24] → III. Итог — III."
