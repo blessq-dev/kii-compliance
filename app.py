@@ -14,7 +14,7 @@ Streamlit пересоздаёт элемент (вкладка переключ
 import csv
 import json
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from html import escape
 
 import altair as alt
@@ -28,8 +28,8 @@ from engine.dataset import DATA_DIR, implemented_codes, load_objects
 from engine.measures import extract_codes, group_title, required_measures
 from engine.report_docx import card_docx, to_act_docx, to_docx
 from engine.impact import diff_rules, impact_on_objects
-from engine.rules_loader import KINDS, RuleBaseError, find_packages, load_rules
-from engine.verification import ERROR, install_package, verify_rules
+from engine.rules_loader import KINDS, RuleBaseError, edition_dates, find_packages, load_rules
+from engine.verification import ERROR, compare_findings, install_package, verify_rules
 from engine.validation import InputError, boundary_note, check_value, condition_error, reference, validate
 
 st.set_page_config(page_title="Оценка соответствия объекта КИИ", page_icon="🛡️", layout="wide")
@@ -192,6 +192,10 @@ except RuleBaseError as _e:
     rules = get_rules(date.today())
 KIND_TITLES = {"spheres": "Сферы субъектов КИИ", "categorization": "Категорирование",
                "measures": "Меры защиты", "security_system": "Система безопасности"}
+SHORT_ACT = {"spheres": "187-ФЗ", "categorization": "ПП № 127", "measures": "приказ № 239",
+             "security_system": "приказ № 235"}
+AREA_ACT = {"Показатель": "ПП № 127", "Условие": "ПП № 127", "Мера": "приказ № 239",
+            "Требование": "приказ № 235", "Сфера": "187-ФЗ"}  # области анализа влияния → документ
 INDICATORS = rules.categorization["indicators"]
 CONDITIONS = rules.categorization["conditions"]  # условия применимости показателей (ПП № 127)
 SPHERES = rules.spheres["spheres"] + [rules.spheres["other"]]
@@ -502,6 +506,71 @@ def delete_from_registry():
     ss.flash = ("success", "Оценка удалена из перечня.")
 
 
+def edition_label(d: date, first: date) -> str:
+    """Подпись состояния базы правил: какие редакции вступили в силу с этой даты."""
+    if d == first:
+        return f"с {d:%d.%m.%Y} — исходные редакции (первые в базе)"
+    started = [p for p in get_packages() if p.effective_from == d]
+    return f"с {d:%d.%m.%Y} — " + "; ".join(f"{SHORT_ACT[p.kind]} {p.passport['edition']}" for p in started)
+
+
+def render_comparison(dates: list[date]):
+    """Сравнение редакций: изменения правил, влияние на объекты, дефекты текста документов."""
+    first = edition_dates(get_packages())[0]
+    st.caption("Что изменится, если перейти от прежней базы правил к редакциям, действующим на дату оценки "
+               f"({rules.on_date:%d.%m.%Y}): какие правила изменились, каких объектов это касается и какие "
+               "дефекты текста документов устранены или появились.")
+    old_date = st.selectbox("Сравнить с базой правил", dates, key="cmp_from",
+                            format_func=lambda d: edition_label(d, first))
+    old_rules = get_rules(old_date)
+    changes = diff_rules(old_rules, rules)
+    resolved, appeared, kept = compare_findings(get_findings(old_date), get_findings(rules.on_date))
+    saved_states = [s["state"] for s in registry.list_all()]
+    states = saved_states or [test_object_state(o) for o in OBJECTS]
+    impact = impact_on_objects(old_rules, rules, states)
+    touched = [i for i in impact if i.changed]
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Изменений в правилах", len(changes))
+    c2.metric("Затронуто объектов", f"{len(touched)} из {len(impact)}")
+    c3.metric("Дефектов текста устранено", len(resolved))
+    c4.metric("Новых замечаний к тексту", len(appeared))
+
+    t1, t2, t3 = st.tabs(["Изменения в правилах", "Влияние на объекты", "Проверка текста документов"])
+    with t1:
+        if not changes:
+            st.caption("Правила не изменились.")
+        else:
+            docs = list(dict.fromkeys(AREA_ACT[c.area] for c in changes))
+            pick = st.segmented_control("Документ", ["все"] + docs, default="все", key="cmp_doc")
+            st.dataframe(pd.DataFrame([{
+                "Документ": AREA_ACT[c.area], "Правило": f"{c.area} {c.rule}", "Изменение": c.what,
+                "Подробности": c.details} for c in changes if pick in (None, "все", AREA_ACT[c.area])]),
+                hide_index=True, width="stretch")
+    with t2:
+        st.caption("Объекты " + ("из перечня." if saved_states else
+                                 "тестового набора (перечень объектов пуст).") +
+                   " Меры, отмеченные реализованными, те же; сравниваются категория, обязательные меры "
+                   "и несоответствия.")
+        st.dataframe(pd.DataFrame([{
+            "Объект": i.name,
+            "Категория": f"{ROMAN.get(i.category_old, '—')} → {ROMAN.get(i.category_new, '—')}",
+            "Стали обязательными": ", ".join(i.became_required),
+            "Перестали быть обязательными": ", ".join(i.no_longer_required),
+            "Новые несоответствия": ", ".join(i.new_missing),
+            "Замечание": i.error or ("" if i.changed else "без изменений")}
+            for i in sorted(impact, key=lambda i: not i.changed)]), hide_index=True, width="stretch")
+    with t3:
+        st.caption("Автоматическая проверка пакетов правил: пересечения и разрывы шкал, монотонность, "
+                   "тяжёлый край шкалы, порог значимости, вложенность наборов мер, направления п. 22 приказа № 239.")
+        for title, items, show in (("Устранены в новой редакции", resolved, st.success),
+                                   ("Появились в новой редакции", appeared, st.warning),
+                                   ("Остались без изменений", kept, st.info)):
+            st.markdown(f"**{title}: {len(items)}**")
+            if items:
+                show("\n".join(f"- **{f.rule}** ({f.package}): {f.text}" for f in items))
+
+
 if "started_at" not in ss:
     reset_form()
 ss.setdefault("mst", {})
@@ -550,9 +619,12 @@ with st.sidebar:
                    f"замечаний к тексту документов {sum(f.level != ERROR for f in findings)}.")
         if findings:
             with st.popover("Замечания проверки", width="stretch"):
-                st.caption("Дефекты текста документов, перенесённые дословно:")
-                for f in findings:
-                    (st.error if f.level == ERROR else st.markdown)(f"**{f.rule}**: {f.text}")
+                st.caption("Дефекты текста документов, перенесённые в правила дословно. Сравнение с прежними "
+                           "редакциями — вкладка 1, «Сравнение редакций».")
+                for pkg_title in dict.fromkeys(f.package for f in findings):
+                    st.markdown(f"**{pkg_title}**")
+                    for f in (f for f in findings if f.package == pkg_title):
+                        (st.error if f.level == ERROR else st.markdown)(f"- **{f.rule}**: {f.text}")
         st.file_uploader("Добавить редакцию (пакет правил .yaml)", type=["yaml", "yml"], key="pkg_file",
                          help="Пакет проверяется автоматически; пакет с ошибками не добавляется.")
         st.button("Проверить и добавить", on_click=add_package, width="stretch")
@@ -722,37 +794,12 @@ with tab1:
                 st.caption("Перечень пока пуст: сохраните сюда текущую оценку кнопкой выше, чтобы вернуться "
                            "к ней позже (файлы хранятся в data/assessments/).")
     # Сравнение редакций — только если у какого-либо документа в базе больше одной редакции
-    packages = get_packages()
-    changes_at = [p.effective_from for p in packages
-                  if any(q.kind == p.kind and q.effective_from < p.effective_from for q in packages)]
-    if changes_at:
+    switch_dates = edition_dates(get_packages())
+    current_from = max([d for d in switch_dates if d <= rules.on_date], default=None)
+    other_dates = [d for d in switch_dates if d != current_from]
+    if other_dates:
         with st.expander("Сравнение редакций и влияние на объекты", icon=":material/compare_arrows:"):
-            last = max([d for d in changes_at if d <= rules.on_date] or changes_at)
-            st.date_input("Сравнить с базой правил на дату", key="cmp_date", format="DD.MM.YYYY",
-                          min_value=date(2000, 1, 1), max_value=date(2100, 12, 31),
-                          value=last - timedelta(days=1))
-            try:
-                old_rules = get_rules(ss.cmp_date)
-            except RuleBaseError as e:
-                st.error(str(e))
-            else:
-                changes = diff_rules(old_rules, rules)
-                st.caption(f"Изменений в правилах: {len(changes)} (от редакций на {ss.cmp_date:%d.%m.%Y} "
-                           f"к редакциям на {rules.on_date:%d.%m.%Y}).")
-                for c in changes[:50]:
-                    st.caption(f"• {c}")
-                saved_states = [s["state"] for s in registry.list_all()]
-                states = saved_states or [test_object_state(o) for o in OBJECTS]
-                st.markdown("**Влияние на объекты** " + ("из перечня" if saved_states else
-                                                         "(перечень пуст — показаны тестовые объекты)"))
-                st.dataframe(pd.DataFrame([{
-                    "Объект": i.name,
-                    "Категория": f"{ROMAN.get(i.category_old, '—')} → {ROMAN.get(i.category_new, '—')}",
-                    "Стали обязательными": ", ".join(i.became_required),
-                    "Перестали быть обязательными": ", ".join(i.no_longer_required),
-                    "Новые несоответствия": ", ".join(i.new_missing),
-                    "Замечание": i.error or ("" if i.changed else "без изменений")}
-                    for i in impact_on_objects(old_rules, rules, states)]), hide_index=True, width="stretch")
+            render_comparison(other_dates)
     hint("Далее — вкладка <b>«2. Показатели значимости»</b>: по ним определяется категория объекта."
          if ss.object_name else "Укажите наименование объекта и сферу деятельности, затем перейдите "
          "на вкладку <b>«2. Показатели значимости»</b>. Для знакомства загрузите пример (блок «Демонстрация»).")
@@ -771,13 +818,26 @@ with tab2:
                          expanded=n_section == 0):
             st.caption(f"Заполнено {filled} из {len(items)}")
             # Условия применимости показателей этого раздела (признаки субъекта или объекта)
-            for cond_id in dict.fromkeys(i["applies_if"] for i in items if i.get("applies_if")):
+            cond_ids = list(dict.fromkeys(i["applies_if"] for i in items if i.get("applies_if")))
+            if cond_ids:
+                st.markdown("**Вид субъекта (объекта).** Отметьте, что относится к объекту, — откроются "
+                            "показатели, которые применяются только при этом условии.")
+            for cond_id in cond_ids:
                 cond = rules.condition(cond_id)
                 used = ", ".join(i["id"] for i in items if i.get("applies_if") == cond_id)
-                st.checkbox(f"{cond['short']} (условие для показателя {used})", key=f"attr_{cond_id}",
+                st.checkbox(f"{cond['short']} (показатель {used})", key=f"attr_{cond_id}",
                             help=f"{cond['text']}.\n\nИсточник: {cond['source']}. Если условие не выполняется, "
                                  "показатель к объекту неприменим.")
+            # Условный показатель без подтверждённого условия скрыт (если значение уже введено —
+            # остаётся видимым, чтобы можно было исправить ошибку).
+            hidden = [i["id"] for i in items if i.get("applies_if") and not attributes.get(i["applies_if"])
+                      and ss.get(f"ind_{i['id']}") is None]
+            if hidden:
+                st.caption(f"Скрыто условных показателей: {len(hidden)} ({', '.join(hidden)}) — "
+                           "условие выше не отмечено.")
             for ind in items:
+                if ind["id"] in hidden:
+                    continue
                 key = f"ind_{ind['id']}"
                 with st.container(border=True):
                     head, res = st.columns([4, 1.4])
@@ -795,8 +855,6 @@ with tab2:
                     errs, warns = check_value(ind, value) if value is not None else ([], [])
                     if value is not None and condition_error(rules, ind, attributes):
                         errs.append(condition_error(rules, ind, attributes))
-                    elif value is None and ind.get("applies_if") and not attributes.get(ind["applies_if"]):
-                        st.caption("Показатель применяется, только если отмечено условие выше.")
                     hit = None
                     if value is not None and not errs:
                         hit = next((r.category for r in cat.details if r.indicator_id == ind["id"]), None)

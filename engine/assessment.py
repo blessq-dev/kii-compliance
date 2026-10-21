@@ -34,6 +34,7 @@ from engine.measures import extract_codes, group_title, required_measures
 from engine.rules_loader import RuleBase
 from engine.security_system import SecurityResult, assess_security
 from engine.validation import InputError, require_valid
+from engine.verification import WARNING, verify_package
 
 NOT_APPLICABLE = "not_applicable"
 COMPENSATED = "compensated"
@@ -105,6 +106,24 @@ def _non_monotonic_notes(rules: RuleBase, category: int) -> list[str]:
                 f"но не категории {category} — так в тексте приложения к приказу № 239. "
                 f"{m.get('note', '')}".strip()
             )
+    return notes
+
+
+def _verifier_notes(rules: RuleBase, filled: list[str], significant: bool) -> list[str]:
+    """Замечания проверки базы правил (engine/verification.py), относящиеся к этой оценке:
+    к заполненным показателям и — для значимого объекта — к направлениям п. 22 приказа № 239.
+    Показатели с замечанием, записанным в самом пакете (поле warning), пропускаются — оно уже в отчёте."""
+    notes = []
+    cat_pkg, meas_pkg = rules.packages.get("categorization"), rules.packages.get("measures")
+    if cat_pkg:
+        own = {i["id"] for i in rules.categorization["indicators"] if i.get("warning")}
+        for f in verify_package(cat_pkg):
+            if f.level == WARNING and f.rule in filled and f.rule not in own:
+                notes.append(f"Показатель {f.rule}: {f.text} (проверка текста ПП № 127).")
+    if significant and meas_pkg:
+        for f in verify_package(meas_pkg):
+            if f.level == WARNING and f.rule.startswith("п. 22"):
+                notes.append(f"Приказ № 239, {f.rule}: {f.text}. Меры по этому направлению система не проверяет.")
     return notes
 
 
@@ -223,6 +242,7 @@ def assess(rules: RuleBase, object_name: str, sphere: str, indicator_values: dic
         report.notices.append("Ни один показатель значимости не заполнен — все они считаются неприменимыми к объекту "
                               "(ПП РФ № 127, Правила, п. 6, абз. 3). Если показатель применим, но не заполнен, "
                               "категория будет занижена.")
+    report.warnings += _verifier_notes(rules, [r.indicator_id for r in cat.details], cat.category is not None)
     if cat.category is not None:
         report.notices += _adaptation_notes(report, rules)
         report.warnings += _non_monotonic_notes(rules, cat.category)

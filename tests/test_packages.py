@@ -21,9 +21,9 @@ from engine.assessment import assess
 from engine.dataset import implemented_codes, load_objects
 from engine.impact import ADDED, CHANGED, REMOVED, diff_rules, impact_on_objects
 from engine.measures import required_measures
-from engine.rules_loader import (KINDS, RULES_DIR, RuleBaseError, check_package, find_packages, load_rules,
-                                 read_package)
-from engine.verification import ERROR, WARNING, verify_package, verify_rules
+from engine.rules_loader import (KINDS, RULES_DIR, RuleBaseError, check_package, edition_dates, find_packages,
+                                 load_rules, read_package)
+from engine.verification import ERROR, WARNING, compare_findings, verify_package, verify_rules
 
 CURRENT_DATE, NEXT_DATE = date(2026, 10, 1), date(2027, 3, 1)
 
@@ -355,3 +355,28 @@ def test_install_rejects_package_with_errors(rules_copy):
     with pytest.raises(RuleBaseError, match="YAML"):
         install_package(b"\xff\xfe", rules_copy)
     assert sorted(rules_copy.rglob("*.yaml")) == before
+
+
+# ---------------- состояния базы правил и замечания в отчёте ----------------
+
+def test_edition_dates():
+    """Даты смены редакций: первая — когда есть пакеты всех видов (приказ № 235 ред. 2019 г.)."""
+    assert [f"{d:%Y-%m-%d}" for d in edition_dates(find_packages())] == [
+        "2019-03-27", "2023-04-20", "2024-08-28", "2025-04-07", "2025-11-07"]
+
+
+def test_compare_findings(original, current):
+    resolved, appeared, kept = compare_findings(verify_rules(original), verify_rules(current))
+    assert {f.rule for f in resolved} == {"5", "9а", "14", "ДНС.5"}
+    assert {f.rule for f in appeared} == {"5б", "10", "10(1)", "10(2)", "п. 22 «т»"}
+    assert kept == []
+
+
+def test_report_contains_verifier_notes(current):
+    """В отчёт попадают замечания проверки к заполненным показателям и к п. 22 приказа № 239."""
+    rep = assess(current, "АБС", "finance", {"10": 50}, [], attributes={"financial_org": True})
+    assert any(w.startswith("Показатель 10:") and "порога значимости" in w for w in rep.warnings)
+    assert any("п. 22 «т»" in w for w in rep.warnings)
+    rep = assess(current, "МИС", "healthcare", {"1": 30}, [])
+    assert not any(w.startswith("Показатель") for w in rep.warnings)
+    assert assess(current, "НИИ", "science", {}, []).warnings == []  # не значимый — без замечаний к мерам

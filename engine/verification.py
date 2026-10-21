@@ -244,6 +244,19 @@ def errors(findings: list[Finding]) -> list[Finding]:
     return [f for f in findings if f.level == ERROR]
 
 
+def compare_findings(old: list[Finding], new: list[Finding]) -> tuple[list[Finding], list[Finding], list[Finding]]:
+    """Сравнение замечаний двух редакций: (устранены в новой, появились в новой, остались).
+
+    Замечание одной и той же сути в разных редакциях совпадает по коду правила и тексту
+    (название пакета в сравнении не участвует — оно у редакций разное).
+    """
+    def key(f: Finding) -> tuple:
+        return f.rule, f.text
+    old_keys, new_keys = {key(f) for f in old}, {key(f) for f in new}
+    return ([f for f in old if key(f) not in new_keys], [f for f in new if key(f) not in old_keys],
+            [f for f in new if key(f) in old_keys])
+
+
 # ---------------- добавление нового пакета в базу правил ----------------
 
 def install_package(raw: bytes, rules_dir: Path | str = RULES_DIR) -> tuple[Path, list[Finding]]:

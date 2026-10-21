@@ -69,7 +69,7 @@ def checked(at) -> int:
 # ---------------- структура ----------------
 
 def test_starts_with_four_steps(app):
-    assert [t.label for t in app.tabs] == [
+    assert [t.label for t in app.tabs if t.label[0].isdigit()] == [
         "1. Объект и сфера", "2. Показатели значимости", "3. Меры защиты", "4. Система безопасности", "5. Отчёт"]
     assert summary_category(app) == "cat0"
     assert not button(app, "Сформировать отчёт").disabled
@@ -78,7 +78,7 @@ def test_starts_with_four_steps(app):
 def test_reference_values_shown(app):
     refs = texts(m for m in app.markdown if 'class="ref"' in m.value)
     assert "более или равно 1, но менее или равно 50" in refs  # п. 1, III категория
-    assert "более 120" in refs                                  # п. 10, I категория
+    assert "более 0,001" in refs                                # п. 9, I категория
 
 
 # ---------------- проверка ввода ----------------
@@ -96,7 +96,7 @@ def test_fractional_people_blocks_report(app):
 
 
 def test_percent_over_100_blocks_report(app):
-    app.number_input(key="ind_8").set_value(150.0).run()
+    app.number_input(key="ind_9").set_value(150.0).run()
     assert "100 %" in texts(app.error)
     assert button(app, "Сформировать отчёт").disabled
 
@@ -225,16 +225,32 @@ def test_gis_notice(app):
     assert "п. 24" in texts(app.info)
 
 
-def test_conditional_indicator_needs_condition(app):
-    """П. 13 ПП № 127 применяется, только если субъект выполняет гособоронзаказ."""
-    app.number_input(key="ind_13а").set_value(20.0).run()
-    assert "только если" in texts(app.error)
-    assert app.session_state["ind_13а"] == 20.0
+def number_keys(at) -> set[str]:
+    return {n.key for n in at.number_input if n.key}
+
+
+def test_conditional_indicator_hidden_until_condition(app):
+    """П. 13 ПП № 127 применяется, только если субъект выполняет гособоронзаказ: до отметки
+    условия поля показателя нет, после — появляется."""
+    assert "ind_13а" not in number_keys(app) and "ind_10(3)" not in number_keys(app)
+    assert "ind_1" in number_keys(app)
     app.checkbox(key="attr_defense_order").check().run()
+    assert {"ind_13а", "ind_13б"} <= number_keys(app)
+    app.number_input(key="ind_13а").set_value(20.0).run()
     assert "только если" not in texts(app.error)
     button(app, "Сформировать отчёт").click().run()
     assert not app.exception
     assert app.session_state["report"].categorization.category == 1
+
+
+def test_conditional_value_without_condition_is_error(app):
+    """Если значение уже есть (например, из файла), а условие снято — поле видно и показана ошибка."""
+    app.checkbox(key="attr_defense_order").check().run()
+    app.number_input(key="ind_13а").set_value(20.0).run()
+    app.checkbox(key="attr_defense_order").uncheck().run()
+    assert "ind_13а" in number_keys(app)
+    assert "только если" in texts(app.error)
+    assert app.session_state["ind_13а"] == 20.0
 
 
 def test_security_done_and_na_are_exclusive(app):
@@ -300,6 +316,17 @@ def test_rule_editions_shown(app):
     captions = texts(app.sidebar.caption)
     assert "Постановление Правительства РФ от 08.02.2018 № 127" in captions
     assert "ошибок 0, замечаний к тексту документов 5" in captions
+
+
+def test_comparison_with_original_editions(app):
+    """Сравнение редакций: по умолчанию — с исходными редакциями; дефекты 2018 г. устранены."""
+    assert app.session_state["cmp_from"].isoformat() == "2019-03-27"
+    metrics = {m.label: m.value for m in app.metric}
+    assert int(metrics["Изменений в правилах"]) > 50
+    assert metrics["Дефектов текста устранено"] != "0" and metrics["Новых замечаний к тексту"] == "5"
+    assert "п. 22 «т»" in texts(app.warning)
+    app.segmented_control(key="cmp_doc").set_value("приказ № 235").run()
+    assert not app.exception
 
 
 def test_date_without_edition_falls_back_to_today(app):

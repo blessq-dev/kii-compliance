@@ -171,6 +171,19 @@ def select_packages(packages: list[Package], on_date: date) -> dict[str, Package
     return chosen
 
 
+def edition_dates(packages: list[Package]) -> list[date]:
+    """Даты, с которых меняется состав действующих редакций (по возрастанию).
+
+    Первая дата — когда в базе впервые есть пакеты всех видов правил; каждая следующая —
+    вступление в силу новой редакции какого-либо документа. На любую дату между соседними
+    датами действует один и тот же набор пакетов.
+    """
+    if {p.kind for p in packages} != set(KINDS):
+        return []
+    start = max(min(p.effective_from for p in packages if p.kind == k) for k in KINDS)
+    return sorted({start} | {p.effective_from for p in packages if p.effective_from > start})
+
+
 def build_rules(chosen: dict[str, Package], on_date: date | None = None) -> RuleBase:
     """База правил из выбранных пакетов (по одному на каждый вид правил)."""
     return RuleBase(
