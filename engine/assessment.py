@@ -12,13 +12,24 @@
                                  обязательно описание компенсирующей меры;
   - не реализована             — несоответствие.
 Уровень соответствия = (реализованные + компенсированные) / (обязательные − неприменимые).
+Если все меры базового набора исключены при адаптации, уровень соответствия не определён.
+
+Проверки адаптации (что система может проверить формально, без оценки по существу):
+  - обоснование и описание компенсирующей меры не пусты и написаны словами, а не только кодами;
+  - компенсирующая мера не может быть той же мерой, которую она компенсирует;
+  - компенсирующая мера указана кодом из приказа № 239, но не отмечена как реализованная — замечание;
+  - политика группы мер (мера «.0») исключена, а другие меры группы остаются — замечание;
+  - исключены все меры базового набора — замечание (п. 23 допускает исключение только мер,
+    связанных с неиспользуемыми технологиями или несвойственными объекту характеристиками).
+Достаточность компенсирующих мер система не оценивает — по п. 26 это делается при
+приёмочных испытаниях (аттестации).
 """
 
 import re
 from dataclasses import dataclass, field
 
 from engine.categorization import CategorizationResult, categorize
-from engine.measures import group_title, required_measures
+from engine.measures import extract_codes, group_title, required_measures
 from engine.rules_loader import RuleBase
 from engine.security_system import SecurityResult, assess_security
 from engine.validation import InputError, require_valid
@@ -71,6 +82,15 @@ class AssessmentReport:
             return None
         return round(100 * self.covered_count / self.applicable_count, 1)
 
+    @property
+    def compliance_text(self) -> str:
+        """Уровень соответствия для отчёта: «93,5 %» или пояснение, почему он не определён."""
+        if self.compliance_percent is not None:
+            return f"{self.compliance_percent:g} %".replace(".", ",")
+        if self.required:
+            return "не определён (все меры базового набора исключены при адаптации)"
+        return "не определён (обязательных мер нет)"
+
 
 def _non_monotonic_notes(rules: RuleBase, category: int) -> list[str]:
     """Замечания к мерам, которые входят в набор более низкой категории,
@@ -84,6 +104,46 @@ def _non_monotonic_notes(rules: RuleBase, category: int) -> list[str]:
                 f"но не категории {category} — так в тексте приложения к приказу № 239. "
                 f"{m.get('note', '')}".strip()
             )
+    return notes
+
+
+def check_status_text(rules: RuleBase, code: str, st: dict) -> list[str]:
+    """Формальная проверка текста обоснования (описания компенсирующей меры); [] — замечаний нет."""
+    text = str(st["text"])
+    codes, unknown = extract_codes(rules, text)
+    words = re.sub(r"[А-ЯЁA-Z0]{3}\.\d+", " ", text.upper())
+    if not re.search(r"[А-ЯЁA-Z]{3,}", words):
+        what = "обоснование" if st["status"] == NOT_APPLICABLE else "описание компенсирующей меры"
+        return [f"мера {code}: {what} должно быть написано словами, а не только кодами мер или знаками"]
+    if st["status"] == COMPENSATED and codes == [code]:
+        return [f"мера {code}: компенсирующая мера не может совпадать с компенсируемой"]
+    return [f"мера {code}: в описании указан неизвестный код меры {u}" for u in unknown]
+
+
+def _adaptation_notes(r: "AssessmentReport", rules: RuleBase) -> list[str]:
+    """Замечания к адаптации базового набора (не ошибки: решение принимает эксперт)."""
+    notes = []
+    done = set(r.implemented)
+    for item in r.compensated:
+        code = item["measure"]["code"]
+        for ref in (c for c in extract_codes(rules, item["text"])[0] if c != code):
+            if ref not in done:
+                notes.append(f"Мера {code} компенсирована мерой {ref}, но мера {ref} не отмечена как реализованная.")
+    na = {i["measure"]["code"] for i in r.not_applicable}
+    for policy in sorted(c for c in na if c.endswith(".0")):
+        group = policy.split(".")[0]
+        rest = [m["code"] for m in r.required if m["group"] == group and m["code"] not in na]
+        if rest:
+            notes.append(f"Мера {policy} (политика группы) исключена при адаптации, хотя меры группы остаются "
+                         f"обязательными ({', '.join(rest[:5])}{' …' if len(rest) > 5 else ''}). Проверьте "
+                         "обоснование: по п. 23 исключаются меры, связанные с неиспользуемыми технологиями.")
+    if r.required and not r.applicable_count:
+        notes.append("Все меры базового набора исключены при адаптации. По п. 23 приказа № 239 исключаются только "
+                     "меры, непосредственно связанные с технологиями, не используемыми в объекте, или "
+                     "характеристиками, не свойственными объекту. Уровень соответствия не определён.")
+    if r.compensated:
+        notes.append("Достаточность и адекватность компенсирующих мер оцениваются при приёмочных испытаниях "
+                     "(аттестации) значимого объекта (п. 26 приказа № 239); система фиксирует только их описание.")
     return notes
 
 
@@ -101,6 +161,8 @@ def _check_statuses(rules: RuleBase, implemented: set, statuses: dict, details: 
         elif not str(st.get("text", "")).strip():
             what = "обоснование неприменимости" if st["status"] == NOT_APPLICABLE else "описание компенсирующей меры"
             errors.append(f"мера {code}: не указано {what}")
+        else:
+            errors += check_status_text(rules, code, st)
         if code in implemented:
             errors.append(f"мера {code}: отмечена как реализованная и одновременно имеет статус "
                           f"«{STATUS_TITLES.get(st.get('status'), st.get('status'))}»")
@@ -156,7 +218,12 @@ def assess(rules: RuleBase, object_name: str, sphere: str, indicator_values: dic
     req_codes = {m["code"] for m in required}
     report.details = {c: d for c, d in details.items() if c in req_codes and (d.get("means") or d.get("due"))}
 
+    if cat.is_kii_subject and not cat.details:
+        report.notices.append("Ни один показатель значимости не заполнен — все они считаются неприменимыми к объекту "
+                              "(ПП РФ № 127, Правила, п. 6, абз. 3). Если показатель применим, но не заполнен, "
+                              "категория будет занижена.")
     if cat.category is not None:
+        report.notices += _adaptation_notes(report, rules)
         report.warnings += _non_monotonic_notes(rules, cat.category)
         what = " и ".join(w for w, flag in (("государственной информационной системой", attributes.get("is_gis")),
                                              ("информационной системой персональных данных",
@@ -192,7 +259,7 @@ def to_markdown(rules: RuleBase, r: AssessmentReport) -> str:
         lines.append(f"- Не применяются (адаптация): {len(r.not_applicable)}")
         lines.append(f"- Реализовано: {r.covered_count - len(r.compensated)}, компенсировано: {len(r.compensated)}")
         lines.append(f"- Несоответствий: {len(r.missing)}")
-        lines.append(f"- Уровень соответствия: {r.compliance_percent}%")
+        lines.append(f"- Уровень соответствия: {r.compliance_text}")
         lines.append("")
         if r.missing:
             lines.append("### Несоответствия (обязательные меры не реализованы)")

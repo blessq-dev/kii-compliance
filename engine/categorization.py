@@ -37,6 +37,7 @@ class CategorizationResult:
     details: list[IndicatorResult] = field(default_factory=list)   # все заполненные показатели
     warnings: list[str] = field(default_factory=list)              # замечания к тексту документа
     explanation: list[str] = field(default_factory=list)           # ход рассуждения для отчёта
+    not_filled: list[str] = field(default_factory=list)            # не заполнены (считаются неприменимыми)
 
 
 def highest(categories) -> int | None:
@@ -114,6 +115,8 @@ def categorize(rules: RuleBase, sphere: str, values: dict) -> CategorizationResu
 
     # Шаг 2. Итоговая категория — наивысшая среди показателей (п. 6 Правил).
     result.category = highest(r.category for r in result.details)
+    filled = {r.indicator_id for r in result.details}
+    result.not_filled = [i["id"] for i in rules.categorization["indicators"] if i["id"] not in filled]
 
     if result.category is None:
         result.explanation.append(
@@ -132,5 +135,11 @@ def categorize(rules: RuleBase, sphere: str, values: dict) -> CategorizationResu
         result.explanation.append(
             f"Присвоена наивысшая из полученных категорий — {result.category} "
             f"(ПП РФ № 127, Правила, п. 6–7)."
+        )
+    if result.not_filled:
+        result.explanation.append(
+            f"Не заполнены и считаются неприменимыми к объекту ({len(result.not_filled)} из "
+            f"{len(rules.categorization['indicators'])}): {', '.join(result.not_filled)} "
+            "(ПП РФ № 127, Правила, п. 6, абз. 3)."
         )
     return result

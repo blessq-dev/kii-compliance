@@ -79,7 +79,8 @@ def test_gis_ispdn_notice():
     assert len(rep.notices) == 1 and "п. 24" in rep.notices[0]
     assert "государственной информационной системой и информационной системой персональных данных" in rep.notices[0]
     assert assess3([]).notices == []
-    assert assess(RULES, "x", "science", {}, [], attributes={"is_gis": True}).notices == []  # не значимый
+    notices = assess(RULES, "x", "science", {}, [], attributes={"is_gis": True}).notices  # не значимый
+    assert not any("п. 24" in n for n in notices)
 
 
 # ---------------- приказ № 235 ----------------
@@ -190,3 +191,48 @@ def test_trials_compare_and_log(tmp_path):
     rows = trials.read(log)
     assert [r["participant"] for r in rows] == ["Иванов", "Петров"] and rows[1]["minutes"] == "12.0"
     assert trials.compare("obj05", None, [])["category_ok"]  # «без категории» тоже сравнивается
+
+
+
+# ---------------- проверки адаптации и пустые показатели ----------------
+
+def test_all_measures_excluded_compliance_not_defined():
+    statuses = {c: {"status": NOT_APPLICABLE, "text": "технология не используется"} for c in BASE3}
+    rep = assess3([], statuses=statuses)
+    assert rep.compliance_percent is None
+    assert rep.compliance_text.startswith("не определён")
+    assert "None" not in to_markdown(RULES, rep)
+    assert any("Все меры базового набора исключены" in n for n in rep.notices)
+
+
+@pytest.mark.parametrize("text, fragment", [
+    ("ИАФ.1", "словами"),
+    (". . .", "словами"),
+    ("ИАФ.1 компенсирована ИАФ.1", "не может совпадать"),
+    ("компенсирована мерой ЖЖЖ.7", "неизвестный код"),
+])
+def test_compensation_text_checked(text, fragment):
+    with pytest.raises(InputError, match=fragment):
+        assess3([], statuses={"ИАФ.1": {"status": COMPENSATED, "text": text}})
+
+
+def test_compensation_by_unimplemented_measure_noted():
+    rep = assess3([], statuses={"ИАФ.1": {"status": COMPENSATED, "text": "заменена мерой ИАФ.2 и пропусками"}})
+    assert any("компенсирована мерой ИАФ.2" in n for n in rep.notices)
+    assert any("п. 26" in n for n in rep.notices)
+    rep = assess3(["ИАФ.2"], statuses={"ИАФ.1": {"status": COMPENSATED, "text": "заменена мерой ИАФ.2"}})
+    assert not any("компенсирована мерой" in n for n in rep.notices)
+
+
+def test_policy_excluded_while_group_remains_noted():
+    rep = assess3([], statuses={"ИАФ.0": {"status": NOT_APPLICABLE, "text": "политика не нужна"}})
+    assert any("ИАФ.0 (политика группы)" in n for n in rep.notices)
+
+
+def test_unfilled_indicators_listed_and_noted():
+    rep = assess(RULES, "x", "healthcare", {}, [])
+    assert any("Ни один показатель" in n for n in rep.notices)
+    assert any("Не заполнены и считаются неприменимыми" in e for e in rep.categorization.explanation)
+    rep = assess(RULES, "x", "healthcare", {"1": 30}, [])
+    assert not any("Ни один показатель" in n for n in rep.notices)
+    assert "1" not in rep.categorization.not_filled and len(rep.categorization.not_filled) == 20

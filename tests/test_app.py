@@ -308,3 +308,11 @@ def test_date_without_edition_falls_back_to_today(app):
     assert not app.exception
     assert "недоступна" in texts(app.error)
     assert app.session_state["rules_date"] == date.today()
+
+
+
+def test_card_rejects_self_compensation(app):
+    app.number_input(key="ind_1").set_value(30.0).run()
+    open_card(app, "ИАФ.1", "compensated", "ИАФ.1 компенсирована ИАФ.1")
+    assert "не может совпадать" in texts(app.error)
+    assert "ИАФ.1" not in app.session_state["mst"]

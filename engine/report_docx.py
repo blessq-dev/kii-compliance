@@ -141,7 +141,7 @@ def _measures_block(doc, rules, report, number):
     _table(doc, ["Обязательных мер", "Не применяются", "Реализовано / компенсировано", "Несоответствий",
                  "Уровень соответствия"],
            [[len(r.required), len(r.not_applicable), f"{r.covered_count - len(r.compensated)} / {len(r.compensated)}",
-             len(r.missing), f"{r.compliance_percent}%".replace(".", ",")]], [3, 3, 4, 3, 4])
+             len(r.missing), r.compliance_text]], [3, 3, 4, 3, 4])
     _p(doc)
     if r.missing:
         _p(doc, "Перечень несоответствий (обязательные меры не реализованы):", 11, True)

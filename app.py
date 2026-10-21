@@ -21,7 +21,7 @@ import pandas as pd
 import streamlit as st
 
 from engine import registry, trials
-from engine.assessment import COMPENSATED, NOT_APPLICABLE, assess, to_markdown
+from engine.assessment import COMPENSATED, NOT_APPLICABLE, assess, check_status_text, to_markdown
 from engine.categorization import categorize
 from engine.dataset import DATA_DIR, implemented_codes, load_objects
 from engine.measures import extract_codes, group_title, required_measures
@@ -267,6 +267,10 @@ def save_card():
     if status in (NOT_APPLICABLE, COMPENSATED) and not text:
         ss.flash_card = ("error", "Для статуса «" + STATUS_LABELS[status] + "» нужно обоснование "
                                   "(для компенсирующей меры — её описание).")
+        return
+    problems = check_status_text(rules, code, {"status": status, "text": text})         if status in (NOT_APPLICABLE, COMPENSATED) else []
+    if problems:
+        ss.flash_card = ("error", "Сведения не сохранены: " + "; ".join(problems) + ".")
         return
     ss.mst.pop(code, None)
     det = ss.mdet.setdefault(code, {})
@@ -839,7 +843,7 @@ with tab5:
             m3.metric("Реализовано", r.covered_count - len(r.compensated),
                       help=f"Ещё компенсировано: {len(r.compensated)}" if r.compensated else None)
             m4.metric("Несоответствий", len(r.missing))
-            m5.metric("Соответствие", f"{r.compliance_percent}%".replace(".", ","))
+            m5.metric("Соответствие", pct_text(r.compliance_percent))
 
             g1, g2 = st.columns([1, 2], gap="large")
             pie = pd.DataFrame({"Статус": ["Реализовано", "Компенсировано", "Не реализовано"],
