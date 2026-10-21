@@ -67,7 +67,7 @@ def _place(paragraphs: list[str], i: int) -> str:
     if not note.startswith("("):  # абзац «… утратил силу. - …» сам является местом изменения
         m = POINT.match(note)
         return f"п. {m.group(1)}" if m else note[:90] + ("…" if len(note) > 90 else "")
-    for j in range(i - 1, max(i - 12, -1), -1):
+    for j in range(i - 1, max(i - 40, -1), -1):  # строки таблицы п. 3 — до 30 абзацев
         if CODE.match(paragraphs[j]):
             return "мера " + re.sub(r"^0", "О", paragraphs[j])  # «0ДТ.2» в тексте КонсультантПлюс
         m = POINT.match(paragraphs[j])

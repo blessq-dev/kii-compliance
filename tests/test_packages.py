@@ -363,7 +363,7 @@ def test_install_rejects_package_with_errors(rules_copy):
 def test_edition_dates():
     """Даты смены редакций: первая — когда есть пакеты всех видов (приказ № 235 ред. 2019 г.)."""
     assert [f"{d:%Y-%m-%d}" for d in edition_dates(find_packages())] == [
-        "2019-03-27", "2023-04-20", "2024-08-28", "2025-04-07", "2025-11-07"]
+        "2019-03-27", "2019-04-13", "2022-12-20", "2023-04-20", "2024-08-28", "2025-04-07", "2025-11-07"]
 
 
 def test_compare_findings(original, current):

@@ -34,6 +34,7 @@ from engine.impact import (ADDED, base_set_changes, diff_rules, impact_on_object
                            requirement_changes)
 from engine.rules_loader import KINDS, RuleBaseError, edition_dates, find_packages, load_rules
 from engine.verification import ERROR, compare_findings, install_package, verify_rules
+from engine.source_table import compare_package, indicator_rows
 from engine.source_text import document_kind, edition_of, read_paragraphs, stale_rules
 from engine.validation import InputError, boundary_note, check_value, condition_error, reference, validate
 
@@ -600,10 +601,20 @@ def render_text_check():
                 f"({pkg.title}, с {pkg.effective_from:%d.%m.%Y}). Проверяется только более новая редакция.")
         return
     items = stale_rules(pkg.data, pkg.effective_from, paras)
+    # Для ПП № 127 значения показателей сверяются ещё и по таблице Перечня: если Перечень изложен
+    # в новой редакции целиком, пометок «в ред.» у пунктов нет
+    mismatches = compare_package(pkg.data, indicator_rows(io.BytesIO(f.getvalue()))) if kind == "categorization" else []
     st.markdown(f"**{SHORT_ACT[kind]}**" + (f", редакция от {edition:%d.%m.%Y}" if edition else "") +
                 f". Сравнивается с пакетом: {pkg.title}, применяется с {pkg.effective_from:%d.%m.%Y}.")
+    if mismatches:
+        st.warning(f"Значения Перечня показателей в тексте расходятся с пакетом правил: {len(mismatches)}.")
+        st.dataframe(pd.DataFrame([{"Показатель": m.indicator, "Расхождение": m.what, "Подробности": m.details}
+                                   for m in mismatches]), hide_index=True, width="stretch")
     if not items:
-        st.success(f"Пакет правил соответствует тексту: изменений после {pkg.effective_from:%d.%m.%Y} нет.")
+        if not mismatches:
+            st.success(f"Пакет правил соответствует тексту: изменений после {pkg.effective_from:%d.%m.%Y} нет, "
+                       + ("значения всех показателей совпадают." if kind == "categorization" else
+                          "пометок об изменениях нет."))
         return
     touched = sorted({r for i in items for r in i.rules})
     no_rule = [i for i in items if not i.rules]
