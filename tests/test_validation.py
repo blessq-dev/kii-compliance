@@ -187,9 +187,41 @@ def test_assess_rejects_invalid_input():
 
 @pytest.mark.parametrize("obj", load_objects(), ids=lambda o: o["id"])
 def test_reference_objects_are_valid_input(obj):
-    assert validate(RULES, obj.get("indicators") or {}).ok
+    assert validate(RULES, obj.get("indicators") or {}, obj.get("attributes") or {}).ok
     assess(RULES, obj["name"], obj["sphere"], obj.get("indicators") or {},
-           implemented_codes(RULES, obj["implemented"]))
+           implemented_codes(RULES, obj["implemented"]), attributes=obj.get("attributes"))
+
+
+# ---------------- 7а. условия применимости показателей ----------------
+
+CONDITIONAL = {"8": "state_org", "10": "financial_org", "13а": "defense_order", "13б": "defense_order",
+               "14": "defense_is"}
+
+
+def test_conditions_in_rules():
+    """Условные показатели — ровно те, у которых условие записано в формулировке Перечня."""
+    assert {i["id"]: i["applies_if"] for i in RULES.categorization["indicators"] if i.get("applies_if")}         == CONDITIONAL
+    for c in RULES.categorization["conditions"]:
+        assert c["source"].startswith("ПП РФ № 127, Перечень показателей, п.")
+    for ind_id, cond_id in CONDITIONAL.items():
+        num = ind_id.rstrip("абв")
+        assert RULES.condition(cond_id)["source"].endswith(f"п. {num}")
+
+
+@pytest.mark.parametrize("ind_id, cond_id", CONDITIONAL.items())
+def test_conditional_indicator_requires_condition(ind_id, cond_id):
+    values = {ind_id: 20}
+    res = validate(RULES, values, {})
+    assert ind_id in res.errors and "применяется, только если" in res.errors[ind_id][0]
+    assert validate(RULES, values, {cond_id: True}).ok
+    assert validate(RULES, values).ok  # без признаков объекта условия не проверяются
+    with pytest.raises(InputError, match="только если"):
+        assess(RULES, "тест", "defense", values, [])
+    assert assess(RULES, "тест", "defense", values, [], attributes={cond_id: True}).categorization.category
+
+
+def test_unconditional_indicator_needs_no_attributes():
+    assert validate(RULES, {"1": 30}, {}).ok
 
 
 # ---------------- 8. подсказки ----------------

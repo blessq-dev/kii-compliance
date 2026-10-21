@@ -86,10 +86,11 @@ def test_gis_ispdn_notice():
 
 def test_security_rules_structure():
     reqs = RULES.security["requirements"]
-    assert len(reqs) == 32
+    assert len(reqs) == 46
     assert all("№ 235, п." in r["source"] for r in reqs)
-    assert {r["id"] for r in reqs if r.get("condition")} == {"С.3", "С.11", "Д.7"}
-    assert len({r["id"] for r in reqs}) == 32
+    assert {r["id"] for r in reqs if r.get("condition")} == {"С.3", "С.11", "С.14", "С.15", "С.17",
+                                                             "Т.6", "Д.7", "Ф.12"}
+    assert len({r["id"] for r in reqs}) == 46
 
 
 def test_security_rules_match_notes():
@@ -101,8 +102,8 @@ def test_security_rules_match_notes():
 def test_assess_security():
     s = assess_security(RULES, ["С.1", "Д.1"], ["С.3"])
     assert [r["id"] for r in s.done] == ["С.1", "Д.1"]
-    assert s.applicable_count == 31 and len(s.missing) == 29
-    assert s.percent == round(100 * 2 / 31, 1)
+    assert s.applicable_count == 45 and len(s.missing) == 43
+    assert s.percent == round(100 * 2 / 45, 1)
 
 
 @pytest.mark.parametrize("done, na, fragment", [

@@ -117,6 +117,6 @@ def test_docx_report(rules):
 def test_reference_objects(rules, obj):
     """Каждый объект тестового набора совпадает с эталоном (ручной расчёт)."""
     rep = assess(rules, obj["name"], obj["sphere"], obj.get("indicators") or {},
-                 implemented_codes(rules, obj["implemented"]))
+                 implemented_codes(rules, obj["implemented"]), attributes=obj.get("attributes"))
     assert rep.categorization.category == obj["expected_category"]
     assert set(rep.missing_codes) == set(obj["expected_missing"])

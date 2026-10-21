@@ -125,6 +125,13 @@ def _attributes_text(attributes: dict | None) -> str:
     return ", ".join(parts) if parts else "нет"
 
 
+def _conditions_text(rules: RuleBase, attributes: dict | None) -> str:
+    """Подтверждённые условия применимости показателей ПП № 127."""
+    a = attributes or {}
+    parts = [c["short"] for c in rules.categorization["conditions"] if a.get(c["id"])]
+    return "; ".join(parts) if parts else "не подтверждены"
+
+
 def _measures_block(doc, rules, report, number):
     r = report
     _p(doc, f"{number}. Соответствие требованиям приказа ФСТЭК России № 239", 12, True)
@@ -205,7 +212,8 @@ def to_docx(rules: RuleBase, report: AssessmentReport, sphere: str, indicator_va
     _table(doc, ["Параметр", "Значение"],
            [["Наименование объекта", report.object_name],
             ["Сфера деятельности (187-ФЗ, ст. 2, п. 8)", _sphere_title(rules, sphere)],
-            ["Является ГИС / ИСПДн", _attributes_text(attributes)]], [6, 11])
+            ["Является ГИС / ИСПДн", _attributes_text(attributes)],
+            ["Условия применимости показателей (ПП РФ № 127)", _conditions_text(rules, attributes)]], [6, 11])
 
     _p(doc)
     _p(doc, "2. Значения показателей критериев значимости (ПП РФ № 127)", 12, True)
@@ -276,6 +284,7 @@ def to_act_docx(rules: RuleBase, report: AssessmentReport, sphere: str, indicato
            [["Наименование объекта", report.object_name],
             ["Сфера деятельности субъекта КИИ (187-ФЗ, ст. 2, п. 8)", _sphere_title(rules, sphere)],
             ["Является ГИС / ИСПДн", _attributes_text(attributes)],
+            ["Условия применимости показателей (ПП РФ № 127)", _conditions_text(rules, attributes)],
             ["Назначение, архитектура, программные и программно-аппаратные средства, взаимодействие с другими "
              "объектами, доступ к сетям связи (п. 10 «а»)", "[заполняется комиссией]"]], [8, 9])
 
@@ -335,7 +344,8 @@ def card_docx(rules: RuleBase, obj: dict, implemented: list[str]) -> bytes:
        10, color=GREY)
     _table(doc, ["Параметр", "Значение"],
            [["Наименование объекта", obj["name"]],
-            ["Сфера деятельности", _sphere_title(rules, obj["sphere"])]], [6, 11])
+            ["Сфера деятельности", _sphere_title(rules, obj["sphere"])],
+            ["Признаки субъекта (объекта)", _conditions_text(rules, obj.get("attributes"))]], [6, 11])
     _p(doc)
     _p(doc, "Оценка последствий компьютерного инцидента (значения показателей):", 11, True)
     rows = []

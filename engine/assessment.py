@@ -122,17 +122,19 @@ def assess(rules: RuleBase, object_name: str, sphere: str, indicator_values: dic
     """Полная оценка объекта.
 
     object_name       — наименование объекта (для отчёта);
-    sphere            — id сферы из rules/spheres.yaml;
+    sphere            — id сферы из пакета 187-ФЗ (rules/187-fz/);
     indicator_values  — {номер показателя ПП № 127: значение};
     implemented       — коды мер, которые пользователь отметил как реализованные;
     statuses          — особые статусы мер {код: {"status": not_applicable|compensated, "text": обоснование}};
     details           — сведения о мерах {код: {"means": чем реализована, "due": "ГГГГ-ММ-ДД"}};
-    attributes        — признаки объекта {"is_gis": bool, "is_ispdn": bool};
+    attributes        — признаки объекта {"is_gis": bool, "is_ispdn": bool} и подтверждённые условия
+                        применимости показателей {id условия из categorization.yaml: bool};
     security          — отметки требований № 235 {"done": [коды], "not_applicable": [коды]}.
     """
     statuses, details, attributes = statuses or {}, details or {}, attributes or {}
-    # Проверяем ввод: невозможные значения показателей и несуществующие меры не допускаются.
-    require_valid(rules, indicator_values)
+    # Проверяем ввод: невозможные значения показателей, показатели без подтверждённого условия
+    # применимости и несуществующие меры не допускаются.
+    require_valid(rules, indicator_values, attributes)
     for code in implemented:
         rules.measure(code)
     done = set(implemented)

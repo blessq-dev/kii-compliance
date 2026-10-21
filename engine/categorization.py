@@ -86,7 +86,7 @@ def evaluate_indicator(rule: dict, value) -> IndicatorResult:
 def categorize(rules: RuleBase, sphere: str, values: dict) -> CategorizationResult:
     """Категорирует объект.
 
-    sphere — id сферы из rules/spheres.yaml;
+    sphere — id сферы из пакета 187-ФЗ (rules/187-fz/);
     values — словарь {номер показателя: значение}. Отсутствующий или пустой
              показатель считается неприменимым к объекту.
     """

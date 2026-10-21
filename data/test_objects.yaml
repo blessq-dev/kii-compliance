@@ -4,8 +4,10 @@
 # покрыть все категории, граничные значения диапазонов и замечания к тексту ПП № 127.
 #
 # Поля объекта:
-#   sphere             — id сферы из rules/spheres.yaml
+#   sphere             — id сферы из пакета 187-ФЗ (rules/187-fz/)
 #   indicators         — {номер показателя ПП № 127: значение}; не указан — неприменим
+#   attributes         — подтверждённые условия применимости показателей
+#                        (id из раздела conditions пакета ПП № 127, rules/pp-127/)
 #   implemented        — какие меры реализованы на объекте (входные данные):
 #       base_category  — взят весь базовый набор этой категории (null — ничего)...
 #       except         — ...кроме этих мер
@@ -39,6 +41,7 @@ objects:
     name: "Автоматизированная банковская система системно значимого банка"
     sphere: finance
     indicators: {"10": 150}
+    attributes: {financial_org: true}
     implemented: {base_category: 1, except: [АУД.5, АВЗ.5, ЗИС.31]}
     expected_category: 1
     expected_missing: [АУД.5, АВЗ.5, ЗИС.31]
@@ -75,6 +78,7 @@ objects:
     name: "MES-система металлургического комбината"
     sphere: metallurgy
     indicators: {"8": 10}
+    attributes: {state_org: true}
     implemented: {base_category: 3, except: [ЗНИ.8]}
     expected_category: 3
     expected_missing: [ЗНИ.8]
@@ -102,6 +106,7 @@ objects:
     name: "Информационная система оборонного предприятия"
     sphere: defense
     indicators: {"14": 3}
+    attributes: {defense_is: true}
     implemented: {base_category: 1, except: []}
     expected_category: 1
     expected_missing: []
@@ -147,6 +152,7 @@ objects:
     name: "АСУ ТП магистрального нефтепровода"
     sphere: fuel_energy
     indicators: {"11а": subject, "13а": 15}
+    attributes: {defense_order: true}
     implemented: {base_category: 2, except: [ОДТ.1, ОДТ.2]}
     expected_category: 2
     expected_missing: [ОДТ.1, ОДТ.2]

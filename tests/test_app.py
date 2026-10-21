@@ -225,6 +225,18 @@ def test_gis_notice(app):
     assert "п. 24" in texts(app.info)
 
 
+def test_conditional_indicator_needs_condition(app):
+    """П. 13 ПП № 127 применяется, только если субъект выполняет гособоронзаказ."""
+    app.number_input(key="ind_13а").set_value(20.0).run()
+    assert "только если" in texts(app.error)
+    assert app.session_state["ind_13а"] == 20.0
+    app.checkbox(key="attr_defense_order").check().run()
+    assert "только если" not in texts(app.error)
+    button(app, "Сформировать отчёт").click().run()
+    assert not app.exception
+    assert app.session_state["report"].categorization.category == 1
+
+
 def test_security_done_and_na_are_exclusive(app):
     app.number_input(key="ind_1").set_value(30.0).run()
     app.checkbox(key="secna_С.3").check().run()
@@ -232,7 +244,7 @@ def test_security_done_and_na_are_exclusive(app):
     assert app.session_state["sec_С.3"] and not app.session_state["secna_С.3"]
     button(app, "Сформировать отчёт").click().run()
     assert not app.exception
-    assert any("Выполнено 1 из 32" in str(p.proto.text) for p in app.get("progress"))
+    assert any("Выполнено 1 из 46" in str(p.proto.text) for p in app.get("progress"))
 
 
 # ---------------- перечень объектов ----------------
@@ -281,3 +293,18 @@ def test_manual_result_form(app):
     row = trials.read(trials.MANUAL_LOG)[-1]
     assert (row["participant"], row["object_id"], row["category_ok"], row["tp"], row["fp"], row["fn"]) == \
         ("Эксперт А", "obj02", "1", "2", "0", "0")
+
+
+def test_rule_editions_shown(app):
+    """Боковая панель показывает редакции документов и итог проверки базы правил."""
+    captions = texts(app.sidebar.caption)
+    assert "Постановление Правительства РФ от 08.02.2018 № 127" in captions
+    assert "ошибок 0, замечаний к тексту документов 7" in captions
+
+
+def test_date_without_edition_falls_back_to_today(app):
+    from datetime import date
+    app.date_input(key="rules_date").set_value(date(2000, 1, 1)).run()
+    assert not app.exception
+    assert "недоступна" in texts(app.error)
+    assert app.session_state["rules_date"] == date.today()

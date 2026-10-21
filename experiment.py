@@ -35,7 +35,7 @@ def run_system(rules, objects) -> list[dict]:
     for obj in objects:
         start = time.perf_counter()
         rep = assess(rules, obj["name"], obj["sphere"], obj.get("indicators") or {},
-                     implemented_codes(rules, obj["implemented"]))
+                     implemented_codes(rules, obj["implemented"]), attributes=obj.get("attributes"))
         seconds = time.perf_counter() - start
         expected = set(obj["expected_missing"])
         found = set(rep.missing_codes)

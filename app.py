@@ -14,7 +14,7 @@ Streamlit пересоздаёт элемент (вкладка переключ
 import csv
 import json
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import altair as alt
 import pandas as pd
@@ -26,8 +26,10 @@ from engine.categorization import categorize
 from engine.dataset import DATA_DIR, implemented_codes, load_objects
 from engine.measures import extract_codes, group_title, required_measures
 from engine.report_docx import card_docx, to_act_docx, to_docx
-from engine.rules_loader import load_rules
-from engine.validation import InputError, boundary_note, check_value, reference, validate
+from engine.impact import diff_rules, impact_on_objects
+from engine.rules_loader import KINDS, RuleBaseError, find_packages, load_rules
+from engine.verification import ERROR, install_package, verify_rules
+from engine.validation import InputError, boundary_note, check_value, condition_error, reference, validate
 
 st.set_page_config(page_title="Оценка соответствия объекта КИИ", page_icon="🛡️", layout="wide")
 
@@ -72,12 +74,32 @@ st.markdown(CSS, unsafe_allow_html=True)
 
 
 @st.cache_resource
-def get_rules():
-    return load_rules()
+def get_rules(on_date: date):
+    """База правил: редакции документов, действующие на дату оценки."""
+    return load_rules(on_date=on_date)
 
 
-rules = get_rules()
+@st.cache_resource
+def get_packages():
+    return find_packages()
+
+
+@st.cache_resource
+def get_findings(on_date: date):
+    return verify_rules(get_rules(on_date))
+
+
+st.session_state.setdefault("rules_date", date.today())
+try:
+    rules = get_rules(st.session_state.rules_date)
+except RuleBaseError as _e:
+    st.error(f"База правил на выбранную дату недоступна: {_e}. Использована текущая дата.")
+    st.session_state.rules_date = date.today()
+    rules = get_rules(date.today())
+KIND_TITLES = {"spheres": "Сферы субъектов КИИ", "categorization": "Категорирование",
+               "measures": "Меры защиты", "security_system": "Система безопасности"}
 INDICATORS = rules.categorization["indicators"]
+CONDITIONS = rules.categorization["conditions"]  # условия применимости показателей (ПП № 127)
 SPHERES = rules.spheres["spheres"] + [rules.spheres["other"]]
 SPHERE_IDS = [s["id"] for s in SPHERES]
 ALL_CODES = [m["code"] for m in rules.measures["measures"]]
@@ -156,6 +178,8 @@ def apply_state(data: dict) -> list[str]:
             ss.mdet[code] = {"means": str(d.get("means", "")), "due": d.get("due")}
     attrs = data.get("attributes") or {}
     ss.attr_gis, ss.attr_ispdn = bool(attrs.get("is_gis")), bool(attrs.get("is_ispdn"))
+    for c in CONDITIONS:
+        ss[f"attr_{c['id']}"] = bool(attrs.get(c["id"]))
     sec = data.get("security") or {}
     req_ids = {r["id"] for r in REQS}
     for rid in sec.get("done", []):
@@ -169,7 +193,7 @@ def apply_state(data: dict) -> list[str]:
 
 def test_object_state(obj: dict) -> dict:
     return {"object_name": obj["name"], "sphere": obj["sphere"], "indicators": obj.get("indicators") or {},
-            "implemented": implemented_codes(rules, obj["implemented"])}
+            "attributes": obj.get("attributes") or {}, "implemented": implemented_codes(rules, obj["implemented"])}
 
 
 def load_example():
@@ -270,6 +294,13 @@ def toggle_req(rid: str, kind: str):
         ss[f"sec_{rid}"] = False
 
 
+def current_attributes() -> dict:
+    """Признаки объекта: ГИС/ИСПДн и подтверждённые условия применимости показателей."""
+    attrs = {"is_gis": bool(ss.get("attr_gis")), "is_ispdn": bool(ss.get("attr_ispdn"))}
+    attrs.update({c["id"]: bool(ss.get(f"attr_{c['id']}")) for c in CONDITIONS})
+    return attrs
+
+
 def current_state() -> dict:
     """Текущие данные формы — для сохранения в файл, перечня объектов и сверки с отчётом."""
     return {"object_name": ss.object_name, "sphere": ss.sphere,
@@ -277,9 +308,28 @@ def current_state() -> dict:
                            if ss.get(f"ind_{i['id']}") is not None},
             "implemented": [c for c in ALL_CODES if ss.get(f"m_{c}")],
             "statuses": dict(ss.mst), "details": {c: d for c, d in ss.mdet.items() if d.get("means") or d.get("due")},
-            "attributes": {"is_gis": bool(ss.get("attr_gis")), "is_ispdn": bool(ss.get("attr_ispdn"))},
+            "attributes": current_attributes(),
             "security": {"done": [r["id"] for r in REQS if ss.get(f"sec_{r['id']}")],
                          "not_applicable": [r["id"] for r in REQS if ss.get(f"secna_{r['id']}")]}}
+
+
+def add_package():
+    """Добавление новой редакции документа (пакета правил) пользователем."""
+    f = ss.get("pkg_file")
+    if f is None:
+        ss.flash_rules = ("error", "Выберите файл пакета правил (.yaml).")
+        return
+    try:
+        path, findings = install_package(f.getvalue())
+    except RuleBaseError as e:
+        ss.flash_rules = ("error", f"Пакет не добавлен: {e}")
+        return
+    get_rules.clear()
+    get_packages.clear()
+    get_findings.clear()
+    ss.flash_rules = ("success", f"Пакет добавлен: {path.parent.name}/{path.name}. Замечаний к тексту "
+                                 f"документа: {len(findings)}. Редакция применяется к оценкам с даты, "
+                                 "указанной в паспорте пакета.")
 
 
 def show_flash(key="flash"):
@@ -329,7 +379,8 @@ ss.setdefault("mdet", {})
 # ---------------- расчёт по текущим данным (до отрисовки) ----------------
 
 raw_values = {i["id"]: ss[f"ind_{i['id']}"] for i in INDICATORS if ss.get(f"ind_{i['id']}") is not None}
-validation = validate(rules, raw_values)
+attributes = current_attributes()
+validation = validate(rules, raw_values, attributes)
 values = {k: v for k, v in raw_values.items() if k not in validation.errors}
 cat = categorize(rules, ss.sphere, values)
 required = required_measures(rules, cat.category)
@@ -352,6 +403,15 @@ with st.sidebar:
     st.markdown("### 🛡️ Оценка соответствия\nзначимого объекта КИИ")
     st.caption("Категорирование по ПП РФ № 127, меры по приказу ФСТЭК России № 239, "
                "система безопасности по приказу № 235.")
+    st.date_input("Дата оценки", key="rules_date", format="DD.MM.YYYY",
+                  min_value=date(2000, 1, 1), max_value=date(2100, 12, 31),
+                  help="Оценка выполняется по редакциям документов, действующим на эту дату.")
+    findings = get_findings(rules.on_date)
+    with st.expander("Редакции документов"):
+        for kind, pkg in rules.packages.items():
+            st.caption(f"**{KIND_TITLES[kind]}:** {pkg.title}, применяется с {pkg.effective_from:%d.%m.%Y}")
+        st.caption(f"Проверка базы правил: ошибок {sum(f.level == ERROR for f in findings)}, "
+                   f"замечаний к тексту документов {sum(f.level != ERROR for f in findings)}.")
     st.divider()
     steps = [("Объект и сфера", bool(ss.object_name)),
              ("Показатели значимости", bool(raw_values) and validation.ok),
@@ -500,6 +560,53 @@ with tab1:
                 r2.button("Удалить", on_click=delete_from_registry, disabled=not confirm, width="stretch")
             else:
                 st.caption("Перечень пуст. Сохранённые оценки хранятся в data/assessments/.")
+        with st.expander("🗂 База правил: редакции и обновления"):
+            show_flash("flash_rules")
+            active = {p.path for p in rules.packages.values()}
+            packages = get_packages()
+            st.dataframe(pd.DataFrame([{
+                "Вид правил": KIND_TITLES[p.kind], "Документ": p.passport["act"], "Редакция": p.passport["edition"],
+                "Применяется с": f"{p.effective_from:%d.%m.%Y}", "Сейчас": "✓" if p.path in active else ""}
+                for p in packages]), hide_index=True, width="stretch")
+            if findings:
+                st.markdown("**Проверка базы правил** — дефекты текста документов, перенесённые дословно:")
+                for f in findings:
+                    (st.error if f.level == ERROR else st.caption)(f"{f.rule}: {f.text} — {f.package}")
+            # даты, когда у документа сменялась редакция (кроме первой редакции каждого документа)
+            changes_at = [p.effective_from for p in packages
+                          if any(q.kind == p.kind and q.effective_from < p.effective_from for q in packages)]
+            if changes_at:
+                st.markdown("**Сравнение редакций**")
+                last = max([d for d in changes_at if d <= rules.on_date] or changes_at)
+                st.date_input("Сравнить с базой правил на дату", key="cmp_date", format="DD.MM.YYYY",
+                              min_value=date(2000, 1, 1), max_value=date(2100, 12, 31),
+                              value=last - timedelta(days=1))
+                try:
+                    old_rules = get_rules(ss.cmp_date)
+                except RuleBaseError as e:
+                    st.error(str(e))
+                else:
+                    changes = diff_rules(old_rules, rules)
+                    st.caption(f"Изменений в правилах: {len(changes)} (от редакций на {ss.cmp_date:%d.%m.%Y} "
+                               f"к редакциям на {rules.on_date:%d.%m.%Y}).")
+                    for c in changes[:50]:
+                        st.caption(f"• {c}")
+                    saved_states = [s["state"] for s in registry.list_all()]
+                    states = saved_states or [test_object_state(o) for o in OBJECTS]
+                    st.markdown("**Влияние на объекты** " + ("из перечня" if saved_states else
+                                                             "(перечень пуст — показаны тестовые объекты)"))
+                    st.dataframe(pd.DataFrame([{
+                        "Объект": i.name,
+                        "Категория": f"{ROMAN.get(i.category_old, '—')} → {ROMAN.get(i.category_new, '—')}",
+                        "Стали обязательными": ", ".join(i.became_required),
+                        "Перестали быть обязательными": ", ".join(i.no_longer_required),
+                        "Новые несоответствия": ", ".join(i.new_missing),
+                        "Замечание": i.error or ("" if i.changed else "без изменений")}
+                        for i in impact_on_objects(old_rules, rules, states)]), hide_index=True, width="stretch")
+            st.markdown("**Добавить редакцию документа**")
+            st.file_uploader("Пакет правил (.yaml)", type=["yaml", "yml"], key="pkg_file",
+                             help="Пакет проверяется автоматически; пакет с ошибками не добавляется.")
+            st.button("Проверить и добавить", on_click=add_package)
         with st.expander("🎓 Демонстрация: пример из тестового набора"):
             st.selectbox("Объект", [o["id"] for o in OBJECTS], key="example_id",
                          format_func=lambda i: f"{i}: " + next(o["name"] for o in OBJECTS if o["id"] == i))
@@ -515,6 +622,13 @@ with tab2:
         filled = sum(1 for i in items if i["id"] in raw_values)
         with st.expander(f"{section} ({len(items)} показ.)", expanded=n_section == 0):
             st.caption(f"Заполнено {filled} из {len(items)}")
+            # Условия применимости показателей этого раздела (признаки субъекта или объекта)
+            for cond_id in dict.fromkeys(i["applies_if"] for i in items if i.get("applies_if")):
+                cond = rules.condition(cond_id)
+                used = ", ".join(i["id"] for i in items if i.get("applies_if") == cond_id)
+                st.checkbox(f"{cond['short']} (условие для показателя {used})", key=f"attr_{cond_id}",
+                            help=f"{cond['text']}.\n\nИсточник: {cond['source']}. Если условие не выполняется, "
+                                 "показатель к объекту неприменим.")
             for ind in items:
                 key = f"ind_{ind['id']}"
                 with st.container(border=True):
@@ -531,6 +645,10 @@ with tab2:
                                    else next(o["text"] for o in ind["options"] if o["id"] == v))
                     value = ss.get(key)
                     errs, warns = check_value(ind, value) if value is not None else ([], [])
+                    if value is not None and condition_error(rules, ind, attributes):
+                        errs.append(condition_error(rules, ind, attributes))
+                    elif value is None and ind.get("applies_if") and not attributes.get(ind["applies_if"]):
+                        st.caption("Показатель применяется, только если отмечено условие выше.")
                     hit = None
                     if value is not None and not errs:
                         hit = next((r.category for r in cat.details if r.indicator_id == ind["id"]), None)

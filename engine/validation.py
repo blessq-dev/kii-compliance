@@ -5,9 +5,14 @@
                             процент больше 100, неизвестный показатель). Оценка не выполняется.
   - предупреждение (warning) — значение возможно, но вероятна ошибка единиц
                             (например, человек введено вместо тысяч человек).
-Ограничения берутся из поля input в rules/categorization.yaml. Это инженерные
+Ограничения берутся из поля input пакета ПП № 127 (rules/pp-127/). Это инженерные
 ограничения ввода, а не нормативные требования: категорию по-прежнему определяют
 только диапазоны из ПП РФ № 127.
+
+Отдельно проверяются условия применимости (поле applies_if): часть показателей
+Перечня относится только к субъектам (объектам) определённого вида. Это нормативное
+условие из формулировки показателя: если оно не подтверждено признаком объекта,
+заполненный показатель считается ошибкой ввода.
 """
 
 import math
@@ -67,8 +72,22 @@ def check_value(rule: dict, value) -> tuple[list[str], list[str]]:
     return errors, warnings
 
 
-def validate(rules: RuleBase, values: dict) -> ValidationResult:
-    """Проверяет все введённые значения показателей. Пустые значения пропускаются."""
+def condition_error(rules: RuleBase, rule: dict, attributes: dict) -> str | None:
+    """Сообщение об ошибке, если показатель заполнен, а его условие применимости не подтверждено."""
+    cond_id = rule.get("applies_if")
+    if not cond_id or attributes.get(cond_id):
+        return None
+    cond = rules.condition(cond_id)
+    return (f"показатель применяется, только если: {cond['text'][0].lower()}{cond['text'][1:]} "
+            f"({cond['source']}). Подтвердите условие или очистите значение")
+
+
+def validate(rules: RuleBase, values: dict, attributes: dict | None = None) -> ValidationResult:
+    """Проверяет все введённые значения показателей. Пустые значения пропускаются.
+
+    attributes — признаки объекта (условия применимости показателей). None — условия
+    не проверяются (проверка только самих значений).
+    """
     res = ValidationResult()
     known = {i["id"] for i in rules.categorization["indicators"]}
     for ind_id, value in values.items():
@@ -82,12 +101,16 @@ def validate(rules: RuleBase, values: dict) -> ValidationResult:
             res._add(res.errors, ind_id, e)
         for w in warns:
             res._add(res.warnings, ind_id, w)
+        if attributes is not None:
+            err = condition_error(rules, rules.indicator(ind_id), attributes)
+            if err:
+                res._add(res.errors, ind_id, err)
     return res
 
 
-def require_valid(rules: RuleBase, values: dict) -> ValidationResult:
+def require_valid(rules: RuleBase, values: dict, attributes: dict | None = None) -> ValidationResult:
     """Как validate(), но при ошибках выбрасывает InputError (используется движком оценки)."""
-    res = validate(rules, values)
+    res = validate(rules, values, attributes)
     if not res.ok:
         raise InputError("Ошибки ввода показателей:\n" + "\n".join(res.all_errors()))
     return res
