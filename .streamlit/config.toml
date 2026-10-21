@@ -12,4 +12,13 @@ toolbarMode = "minimal"  # скрыть служебные кнопки разр
 
 [theme]
 base = "light"           # единый светлый вид независимо от темы системы
-primaryColor = "#1f5fa8"
+primaryColor = "#1f5fa8"   # единый акцентный цвет (кнопки, вкладки, прогресс)
+textColor = "#14233a"      # основной текст — тёмно-синий, мягче чистого чёрного
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f3f5f9"  # поля ввода и подложки
+borderColor = "#dde3ec"
+baseRadius = "0.6rem"
+
+[theme.sidebar]
+backgroundColor = "#f5f7fb"
+secondaryBackgroundColor = "#ffffff"
