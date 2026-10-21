@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from engine.rules_loader import read_package
-from engine.source_text import amendments, read_paragraphs, stale_rules
+from engine.source_text import amendments, document_kind, edition_of, read_paragraphs, stale_rules
 
 ROOT = Path(__file__).resolve().parent.parent
 EDITIONS = {"PP-127_red_2019-04-13.docx": date(2019, 4, 13), "PP-127_red_2021-12-24.docx": date(2021, 12, 24),
@@ -54,3 +54,35 @@ def test_changes_between_neighbour_editions():
                         "Перечень, п. 10(1)", "Перечень, п. 10(2)", "Перечень, п. 10(3)", "Перечень, п. 10(4)",
                         "Перечень, п. 10(5)", "Перечень, п. 13"}
     assert all(s.last > date(2021, 12, 24) for s in items)
+
+
+@pytest.mark.parametrize("name, kind, edition", [
+    ("Postanovlenie_Pravitelstva_RF_ot_08_02_2018_N_127_red_ot.docx", "categorization", date(2025, 11, 7)),
+    ("Prikaz_FSTEK_Rossii_ot_25_12_2017_N_239_red_ot_28_08_2024.docx", "measures", date(2024, 8, 28)),
+    ("Prikaz_FSTEK_Rossii_ot_21_12_2017_N_235_red_ot_20_04_2023.docx", "security_system", date(2023, 4, 20)),
+    ("Federalny_zakon_ot_26_07_2017_N_187-FZ_red_ot_07_04_2025.docx", "spheres", date(2025, 4, 7)),
+    ("Federalny_zakon_ot_27_07_2006_N_152-FZ_red_ot_26_07_2026.docx", None, date(2026, 7, 26)),
+])
+def test_document_kind_and_edition(name, kind, edition):
+    assert document_kind(text(name)) == kind and edition_of(text(name)) == edition
+
+
+def test_order_235_changes_point_to_requirements():
+    """Приказ № 69 (2023): изменения пунктов связаны с требованиями чек-листа пакета 2019 г."""
+    pkg = read_package(ROOT / "rules" / "fstek-235" / "2019-03-27.yaml")
+    items = {s.place: s for s in stale_rules(pkg.data, pkg.effective_from,
+                                             text("Prikaz_FSTEK_Rossii_ot_21_12_2017_N_235_red_ot_20_04_2023.docx"))}
+    assert items["Требования, п. 12"].rules == ["С.5", "С.6", "С.7"]
+    assert items["Требования, п. 12.1"].kind == "введено" and items["Требования, п. 12.1"].rules == []
+    assert all(s.last == date(2023, 4, 20) for s in items.values())
+
+
+def test_order_239_changes_point_to_measures():
+    """Изменённые строки таблицы приложения связаны с мерами пакета 2018 г. по коду меры."""
+    pkg = read_package(ROOT / "rules" / "fstek-239" / "2018-08-09.yaml")
+    items = {s.place: s for s in stale_rules(pkg.data, pkg.effective_from,
+                                             text("Prikaz_FSTEK_Rossii_ot_25_12_2017_N_239_red_ot_28_08_2024.docx"))}
+    for code in ("ИАФ.0", "ЗИС.6", "ЗИС.23", "ИНЦ.6", "УПД.8"):
+        assert items[f"Требования, мера {code}"].rules == [code]
+    assert items["Требования, п. 22"].last == date(2024, 8, 28) and "ИАФ" in items["Требования, п. 22"].rules
+    assert "Требования, мера ДНС.5" not in items  # пометка «в ред. № 138» — не позже даты пакета

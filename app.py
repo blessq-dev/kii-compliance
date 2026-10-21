@@ -12,8 +12,10 @@ Streamlit пересоздаёт элемент (вкладка переключ
 """
 
 import csv
+import io
 import json
 import time
+import zipfile
 from datetime import date, datetime
 from html import escape
 
@@ -31,6 +33,7 @@ from engine.impact import (ADDED, base_set_changes, diff_rules, impact_on_object
                            requirement_changes)
 from engine.rules_loader import KINDS, RuleBaseError, edition_dates, find_packages, load_rules
 from engine.verification import ERROR, compare_findings, install_package, verify_rules
+from engine.source_text import document_kind, edition_of, read_paragraphs, stale_rules
 from engine.validation import InputError, boundary_note, check_value, condition_error, reference, validate
 
 st.set_page_config(page_title="Оценка соответствия объекта КИИ", page_icon="🛡️", layout="wide")
@@ -572,6 +575,46 @@ def render_comparison(dates: list[date]):
                 show("\n".join(f"- **{f.rule}** ({f.package}): {f.text}" for f in items))
 
 
+def render_text_check():
+    """Проверка текста новой редакции документа: устарел ли пакет правил и какие правила затронуты."""
+    st.caption("Загрузите текст документа из КонсультантПлюс (.docx). По пометкам «в ред.», «введен», "
+               "«утратил силу» система найдёт места, изменённые после даты действующего пакета правил, и "
+               "правила, которые на них основаны. Нормативный текст не интерпретируется — только пометки и даты.")
+    f = st.file_uploader("Текст редакции документа (.docx)", type=["docx"], key="src_docx")
+    if f is None:
+        return
+    try:
+        paras = read_paragraphs(io.BytesIO(f.getvalue()))
+    except (zipfile.BadZipFile, KeyError):
+        st.error("Файл не является документом Word (.docx).")
+        return
+    kind, edition = document_kind(paras), edition_of(paras)
+    if kind is None:
+        st.error("Документ не относится к базе правил (ожидаются ПП РФ № 127, приказы ФСТЭК России № 239, № 235, "
+                 "187-ФЗ). Заголовок: " + (paras[0][:150] if paras else "—"))
+        return
+    pkg = rules.packages[kind]
+    if edition and edition < pkg.effective_from:
+        st.info(f"Загружена редакция от {edition:%d.%m.%Y} — она старше действующего пакета правил "
+                f"({pkg.title}, с {pkg.effective_from:%d.%m.%Y}). Проверяется только более новая редакция.")
+        return
+    items = stale_rules(pkg.data, pkg.effective_from, paras)
+    st.markdown(f"**{SHORT_ACT[kind]}**" + (f", редакция от {edition:%d.%m.%Y}" if edition else "") +
+                f". Сравнивается с пакетом: {pkg.title}, применяется с {pkg.effective_from:%d.%m.%Y}.")
+    if not items:
+        st.success(f"Пакет правил соответствует тексту: изменений после {pkg.effective_from:%d.%m.%Y} нет.")
+        return
+    touched = sorted({r for i in items for r in i.rules})
+    no_rule = [i for i in items if not i.rules]
+    st.warning(f"Пакет правил устарел: после {pkg.effective_from:%d.%m.%Y} изменено мест в тексте — {len(items)}; "
+               f"затронуто правил пакета — {len(touched)}; изменённых положений без правил — {len(no_rule)} "
+               "(не формализованы или их нужно добавить).")
+    st.dataframe(pd.DataFrame([{
+        "Место в документе": i.place, "Изменение": i.kind, "Дата акта": f"{i.last:%d.%m.%Y}",
+        "Правила пакета": ", ".join(i.rules) or "—"} for i in sorted(items, key=lambda i: not i.rules)]),
+        hide_index=True, width="stretch")
+
+
 if "started_at" not in ss:
     reset_form()
 ss.setdefault("mst", {})
@@ -801,6 +844,8 @@ with tab1:
     if other_dates:
         with st.expander("Сравнение редакций и влияние на объекты", icon=":material/compare_arrows:"):
             render_comparison(other_dates)
+    with st.expander("Проверка новой редакции документа (.docx)", icon=":material/find_in_page:"):
+        render_text_check()
     hint("Далее — вкладка <b>«2. Показатели значимости»</b>: по ним определяется категория объекта."
          if ss.object_name else "Укажите наименование объекта и сферу деятельности, затем перейдите "
          "на вкладку <b>«2. Показатели значимости»</b>. Для знакомства загрузите пример (блок «Демонстрация»).")

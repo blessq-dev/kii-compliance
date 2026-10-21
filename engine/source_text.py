@@ -51,7 +51,8 @@ def _kind(note: str) -> str:
     return "изменено"
 
 
-POINT = re.compile(r"^(\d+(?:\(\d+\))?)\.(?:\s|$)")  # «5.», «10(1).», «19(2). Текст …»
+POINT = re.compile(r"^(\d+(?:\(\d+\)|\.\d+)?)\.(?:\s|$)")  # «5.», «10(1).», «10.1. Текст …»
+CODE = re.compile(r"^[А-Я0-9]{3}\.\d+$")  # код меры в таблице приложения (приказ № 239)
 PARTS = {"ПРАВИЛА": "Правила", "ПЕРЕЧЕНЬ": "Перечень", "ТРЕБОВАНИЯ": "Требования"}  # заголовки частей
 
 
@@ -67,6 +68,8 @@ def _place(paragraphs: list[str], i: int) -> str:
         m = POINT.match(note)
         return f"п. {m.group(1)}" if m else note[:90] + ("…" if len(note) > 90 else "")
     for j in range(i - 1, max(i - 12, -1), -1):
+        if CODE.match(paragraphs[j]):
+            return "мера " + re.sub(r"^0", "О", paragraphs[j])  # «0ДТ.2» в тексте КонсультантПлюс
         m = POINT.match(paragraphs[j])
         if m:
             return f"п. {m.group(1)}"
@@ -97,7 +100,9 @@ def changed_after(paragraphs: list[str], since: date) -> list[Amendment]:
 
 # ---------------- связь изменений с правилами пакета ----------------
 
-SOURCE_POINT = re.compile(r"(Правил[а-я]*|Перечень показателей|Требования)[^,]*, (?:приложение, )?п\. (\d+(?:\(\d+\))?)")
+# «ПП РФ № 127, Перечень показателей, п. 10(1)», «… № 239, Требования, п. 22», «Приказ ФСТЭК России № 235, п. 10.1»
+SOURCE_POINT = re.compile(r"(Правил[а-я]*|Перечень показателей|Требования|№ 235)[^,]*, (?:приложение, )?"
+                          r"п\. (\d+(?:\(\d+\)|\.\d+)?)")
 
 
 def _rule_points(pkg_data: dict) -> dict[tuple[str, str], list[str]]:
@@ -110,6 +115,8 @@ def _rule_points(pkg_data: dict) -> dict[tuple[str, str], list[str]]:
             if not isinstance(it, dict) or "source" not in it:
                 continue
             code = str(it.get("id") or it.get("code"))
+            if CODE.match(code):
+                out.setdefault(("мера", code), []).append(code)
             for part, num in SOURCE_POINT.findall(it["source"]):
                 key = ("Перечень" if part.startswith("Перечень") else
                        "Правила" if part.startswith("Правил") else "Требования", num)
@@ -134,9 +141,28 @@ def stale_rules(pkg_data: dict, since: date, paragraphs: list[str]) -> list[Stal
     points = _rule_points(pkg_data)
     out: dict[str, StaleItem] = {}
     for a in changed_after(paragraphs, since):
-        m = re.match(r"(Правила|Перечень|Требования), п\. (\d+(?:\(\d+\))?)$", a.place)
-        rules = points.get((m.group(1), m.group(2)), []) if m else []
+        m = re.search(r"(Правила|Перечень|Требования), п\. (\d+(?:\(\d+\)|\.\d+)?)$", a.place)
+        code = re.search(r"мера (\S+)$", a.place)
+        rules = (points.get((m.group(1), m.group(2)), []) if m else
+                 points.get(("мера", code.group(1)), []) if code else [])
         item = out.get(a.place)
         if item is None or a.last > item.last:
             out[a.place] = StaleItem(a.place, a.kind, a.last, sorted(set(rules)))
     return list(out.values())
+
+
+# Документ по заголовку (первый абзац текста КонсультантПлюс) → вид правил пакета
+DOCUMENT_KINDS = [(r"N 127(?!\d)", "categorization"), (r"N 239(?!\d)", "measures"),
+                  (r"N 235(?!\d)", "security_system"), (r"N 187-ФЗ", "spheres")]
+
+
+def document_kind(paragraphs: list[str]) -> str | None:
+    """Вид правил, к которому относится документ (по заголовку), или None — документ не из базы правил."""
+    head = paragraphs[0] if paragraphs else ""
+    return next((kind for pattern, kind in DOCUMENT_KINDS if re.search(pattern, head)), None)
+
+
+def edition_of(paragraphs: list[str]) -> date | None:
+    """Дата редакции из заголовка «… (ред. от 07.11.2025) …»."""
+    m = re.search(r"ред\. от (\d{2})\.(\d{2})\.(\d{4})", paragraphs[0] if paragraphs else "")
+    return date(int(m.group(3)), int(m.group(2)), int(m.group(1))) if m else None
