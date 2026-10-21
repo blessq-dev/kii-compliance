@@ -9,9 +9,9 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from engine.dataset import DATA_DIR
+from engine.paths import USER_DIR
 
-REGISTRY_DIR = DATA_DIR / "assessments"
+REGISTRY_DIR = USER_DIR / "assessments"
 
 
 def _slug(name: str) -> str:

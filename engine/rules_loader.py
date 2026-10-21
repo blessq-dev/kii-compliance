@@ -23,8 +23,8 @@ from pathlib import Path
 
 import yaml
 
-# Папка с правилами по умолчанию: <корень проекта>/rules
-RULES_DIR = Path(__file__).resolve().parent.parent / "rules"
+# Папки с правилами: поставляемые с программой (rules/) и добавленные пользователем (см. engine/paths.py)
+from engine.paths import RULES_DIR, USER_RULES_DIR
 
 # Виды правил (типовые конструкции) и раздел пакета, в котором лежат сами правила.
 KINDS = {
@@ -150,9 +150,13 @@ def read_package(path: Path | str) -> Package:
     return check_package(data, path)
 
 
-def find_packages(rules_dir: Path | str = RULES_DIR) -> list[Package]:
-    """Все пакеты в папке правил (во вложенных папках), по виду правил и дате редакции."""
-    packages = [read_package(p) for p in sorted(Path(rules_dir).rglob("*.yaml"))]
+def find_packages(rules_dir: Path | str | None = None) -> list[Package]:
+    """Все пакеты в папке правил (во вложенных папках), по виду правил и дате редакции.
+
+    По умолчанию — поставляемые пакеты и пакеты, добавленные пользователем.
+    """
+    dirs = [Path(rules_dir)] if rules_dir else list(dict.fromkeys([RULES_DIR, USER_RULES_DIR]))
+    packages = [read_package(p) for d in dirs if d.exists() for p in sorted(d.rglob("*.yaml"))]
     return sorted(packages, key=lambda p: (p.kind, p.effective_from))
 
 
@@ -197,7 +201,7 @@ def build_rules(chosen: dict[str, Package], on_date: date | None = None) -> Rule
     )
 
 
-def load_rules(rules_dir: Path | str = RULES_DIR, on_date: date | None = None) -> RuleBase:
+def load_rules(rules_dir: Path | str | None = None, on_date: date | None = None) -> RuleBase:
     """Читает пакеты правил и возвращает базу, действующую на дату on_date (по умолчанию — сегодня)."""
     on_date = on_date or date.today()
     return build_rules(select_packages(find_packages(rules_dir), on_date), on_date)

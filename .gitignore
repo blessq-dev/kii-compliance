@@ -7,3 +7,8 @@ __pycache__/
 data/assessments/
 # журналы оценок через интерфейс и результаты эксперимента с участниками
 data/results/sessions.csv
+
+# сборка exe (build_exe.py): промежуточные файлы и результат
+build/
+dist/
+*.spec

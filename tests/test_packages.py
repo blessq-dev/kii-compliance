@@ -395,3 +395,17 @@ def test_changes_against_previous_edition(current):
     assert {i for i, w in changes.items() if w == ADDED} == {"С.18", "Т.8"}
     assert changes["С.7"] == CHANGED and "С.2" not in changes
     assert previous_edition(packages, prev_meas) is None
+
+
+def test_user_rules_dir(rules_copy, tmp_path, monkeypatch):
+    """Собранная программа (exe): добавленная редакция сохраняется в папку данных пользователя,
+    а не в папку программы, и учитывается вместе с поставляемыми пакетами."""
+    from engine import rules_loader, verification
+    user_rules = tmp_path / "данные" / "rules"
+    monkeypatch.setattr(rules_loader, "USER_RULES_DIR", user_rules)
+    monkeypatch.setattr(verification, "USER_RULES_DIR", user_rules)
+    src = new_edition_239(rules_copy)
+    path, _ = verification.install_package(src.read_bytes())
+    assert path == user_rules / "fstek-239" / "2027-01-01.yaml"
+    assert load_rules(on_date=NEXT_DATE).packages["measures"].path == path
+    assert load_rules(on_date=CURRENT_DATE).packages["measures"].path.parent.parent == RULES_DIR

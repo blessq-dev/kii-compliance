@@ -5,9 +5,8 @@ from pathlib import Path
 import yaml
 
 from engine.measures import required_measures
+from engine.paths import DATA_DIR
 from engine.rules_loader import RuleBase
-
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 
 def load_objects(path: Path | str = DATA_DIR / "test_objects.yaml") -> list[dict]:

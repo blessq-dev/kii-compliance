@@ -27,7 +27,7 @@ from pathlib import Path
 
 import yaml
 
-from engine.rules_loader import RULES_DIR, Package, RuleBase, RuleBaseError, check_package, find_packages
+from engine.rules_loader import USER_RULES_DIR, Package, RuleBase, RuleBaseError, check_package, find_packages
 
 INF = float("inf")
 CATEGORIES = (1, 2, 3)
@@ -259,8 +259,10 @@ def compare_findings(old: list[Finding], new: list[Finding]) -> tuple[list[Findi
 
 # ---------------- добавление нового пакета в базу правил ----------------
 
-def install_package(raw: bytes, rules_dir: Path | str = RULES_DIR) -> tuple[Path, list[Finding]]:
-    """Проверяет пакет (структура и верификация) и сохраняет его в rules/<документ>/<дата>.yaml.
+def install_package(raw: bytes, rules_dir: Path | str | None = None) -> tuple[Path, list[Finding]]:
+    """Проверяет пакет (структура и верификация) и сохраняет его в <папка правил>/<документ>/<дата>.yaml.
+
+    По умолчанию пакет сохраняется в папку правил пользователя (engine/paths.py).
 
     Пакет с ошибками не сохраняется (RuleBaseError); замечания к тексту документа
     не мешают сохранению и возвращаются вызывающему. Папка документа — та же, где лежат
@@ -277,7 +279,8 @@ def install_package(raw: bytes, rules_dir: Path | str = RULES_DIR) -> tuple[Path
     existing = [p for p in find_packages(rules_dir) if p.kind == pkg.kind]
     if any(p.effective_from == pkg.effective_from for p in existing):
         raise RuleBaseError(f"редакция правил вида {pkg.kind!r} с датой {pkg.effective_from:%d.%m.%Y} уже есть")
-    folder = existing[-1].path.parent if existing else Path(rules_dir) / pkg.kind
+    target = Path(rules_dir) if rules_dir else USER_RULES_DIR
+    folder = target / (existing[-1].path.parent.name if existing else pkg.kind)
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{pkg.effective_from:%Y-%m-%d}.yaml"
     path.write_bytes(raw)

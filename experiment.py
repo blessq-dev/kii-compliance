@@ -18,11 +18,12 @@ from pathlib import Path
 
 from engine.assessment import assess
 from engine import trials
-from engine.dataset import DATA_DIR, implemented_codes, load_objects
+from engine.dataset import implemented_codes, load_objects
 from engine.metrics import Counts, category_accuracy
+from engine.paths import USER_DIR
 from engine.rules_loader import load_rules
 
-RESULTS_DIR = DATA_DIR / "results"
+RESULTS_DIR = USER_DIR / "results"
 
 
 def fmt_cat(c) -> str:
@@ -72,7 +73,7 @@ def participants_summary() -> None:
                         ("УЧАСТНИКИ: РУЧНАЯ ОЦЕНКА", trials.MANUAL_LOG)):
         rows = trials.read(path)
         if not rows:
-            print(f"\n{title}: записей пока нет ({path.relative_to(DATA_DIR.parent)}).")
+            print(f"\n{title}: записей пока нет ({path}).")
             continue
         pairs = [(r["expected_category"], r["category"]) for r in rows]
         counts = Counts(sum(int(r["tp"]) for r in rows), sum(int(r["fp"]) for r in rows),

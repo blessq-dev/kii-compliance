@@ -10,9 +10,10 @@ import csv
 from datetime import datetime
 from pathlib import Path
 
-from engine.dataset import DATA_DIR, load_objects
+from engine.dataset import load_objects
+from engine.paths import USER_DIR
 
-RESULTS_DIR = DATA_DIR / "results"
+RESULTS_DIR = USER_DIR / "results"
 SYSTEM_LOG = RESULTS_DIR / "experiment_system.csv"
 MANUAL_LOG = RESULTS_DIR / "experiment_manual.csv"
 FIELDS = ["datetime", "participant", "object_id", "minutes", "category", "expected_category",

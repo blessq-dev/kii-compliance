@@ -26,7 +26,8 @@ import streamlit as st
 from engine import registry, trials
 from engine.assessment import COMPENSATED, NOT_APPLICABLE, assess, check_status_text, to_markdown
 from engine.categorization import categorize
-from engine.dataset import DATA_DIR, implemented_codes, load_objects
+from engine.dataset import implemented_codes, load_objects
+from engine.paths import USER_DIR
 from engine.measures import extract_codes, group_title, required_measures
 from engine.report_docx import card_docx, to_act_docx, to_docx
 from engine.impact import (ADDED, base_set_changes, diff_rules, impact_on_objects, previous_edition,
@@ -1106,7 +1107,7 @@ with tab5:
                            f"{'верна' if tr['category_ok'] else 'НЕ верна'}; несоответствия: найдено верно "
                            f"{tr['tp']}, лишних {tr['fp']}, пропущено {tr['fn']}.")
             elif not ss.saved:  # общий журнал времени оценок через интерфейс
-                path = DATA_DIR / "results" / "sessions.csv"
+                path = USER_DIR / "results" / "sessions.csv"
                 path.parent.mkdir(parents=True, exist_ok=True)
                 new = not path.exists()
                 with open(path, "a", newline="", encoding="utf-8") as f:
