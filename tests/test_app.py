@@ -343,3 +343,13 @@ def test_card_rejects_self_compensation(app):
     open_card(app, "ИАФ.1", "compensated", "ИАФ.1 компенсирована ИАФ.1")
     assert "не может совпадать" in texts(app.error)
     assert "ИАФ.1" not in app.session_state["mst"]
+
+
+def test_new_measures_marked(app):
+    """Меры, ставшие обязательными в действующей редакции приказа № 239, помечены."""
+    load_example(app, "obj02")
+    assert "ДНС.5, ЗИС.6, ИНЦ.6" in texts(app.info)
+    label = next(c.label for c in measure_boxes(app) if c.key == "m_ДНС.5")
+    assert "обязательна с 28.08.2024" in label
+    sec = next(c.label for c in app.checkbox if c.key == "sec_С.18")
+    assert "новое с 20.04.2023" in sec

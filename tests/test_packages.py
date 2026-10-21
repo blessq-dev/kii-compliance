@@ -19,7 +19,8 @@ import yaml
 from conftest import ORIGINAL_DATE
 from engine.assessment import assess
 from engine.dataset import implemented_codes, load_objects
-from engine.impact import ADDED, CHANGED, REMOVED, diff_rules, impact_on_objects
+from engine.impact import (ADDED, CHANGED, REMOVED, base_set_changes, diff_rules, impact_on_objects,
+                           previous_edition, requirement_changes)
 from engine.measures import required_measures
 from engine.rules_loader import (KINDS, RULES_DIR, RuleBaseError, check_package, edition_dates, find_packages,
                                  load_rules, read_package)
@@ -380,3 +381,17 @@ def test_report_contains_verifier_notes(current):
     rep = assess(current, "МИС", "healthcare", {"1": 30}, [])
     assert not any(w.startswith("Показатель") for w in rep.warnings)
     assert assess(current, "НИИ", "science", {}, []).warnings == []  # не значимый — без замечаний к мерам
+
+
+def test_changes_against_previous_edition(current):
+    """Пометки «новое в редакции»: изменения действующей редакции относительно предыдущей."""
+    packages = find_packages()
+    meas, sec = current.packages["measures"], current.packages["security_system"]
+    prev_meas, prev_sec = previous_edition(packages, meas), previous_edition(packages, sec)
+    assert prev_meas.path.name == "2018-08-09.yaml" and prev_sec.path.name == "2019-03-27.yaml"
+    assert base_set_changes(prev_meas, meas, 2) == (["ДНС.5", "ЗИС.6", "ИНЦ.6"],
+                                                    ["ЗИС.23", "ЗИС.24", "ЗИС.25", "ЗИС.28", "ЗИС.29"])
+    changes = requirement_changes(prev_sec, sec)
+    assert {i for i, w in changes.items() if w == ADDED} == {"С.18", "Т.8"}
+    assert changes["С.7"] == CHANGED and "С.2" not in changes
+    assert previous_edition(packages, prev_meas) is None

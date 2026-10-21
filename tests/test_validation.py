@@ -275,6 +275,6 @@ def test_boundary_note_explains_inclusion():
 
 
 def test_describe_value():
-    assert describe(RULES.indicator("1"), 51).startswith("→ 2 категория")
+    assert describe(RULES.indicator("1"), 51).startswith("→ II категория")
     assert "не присваивается" in describe(RULES.indicator("1"), 0)
-    assert describe(RULES.indicator("2а"), "federal").startswith("→ 1 категория")
+    assert describe(RULES.indicator("2а"), "federal").startswith("→ I категория")

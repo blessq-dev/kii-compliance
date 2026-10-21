@@ -6,14 +6,17 @@
    какие меры становятся обязательными или перестают быть обязательными, какие новые
    несоответствия появляются при тех же реализованных мерах.
 
-Обе функции работают с любыми пакетами правил: новая редакция подключается
+3. previous_edition, base_set_changes, requirement_changes — что нового в действующей
+   редакции по сравнению с предыдущей (для пометок в интерфейсе).
+
+Все функции работают с любыми пакетами правил: новая редакция подключается
 добавлением файла в rules/, код не меняется.
 """
 
 from dataclasses import dataclass, field
 
 from engine.assessment import assess
-from engine.rules_loader import RuleBase
+from engine.rules_loader import Package, RuleBase
 from engine.validation import InputError
 
 ADDED, REMOVED, CHANGED = "добавлено", "исключено", "изменено"
@@ -130,3 +133,27 @@ def impact_on_objects(old: RuleBase, new: RuleBase, states: list[dict]) -> list[
         res.resolved = sorted(set(before.missing_codes) - set(after.missing_codes))
         out.append(res)
     return out
+
+
+# ---------------- изменения действующей редакции относительно предыдущей ----------------
+
+def previous_edition(packages: list[Package], pkg: Package) -> Package | None:
+    """Предыдущая редакция того же документа: пакет того же вида с ближайшей более ранней датой."""
+    earlier = [p for p in packages if p.kind == pkg.kind and p.effective_from < pkg.effective_from]
+    return max(earlier, key=lambda p: p.effective_from) if earlier else None
+
+
+def base_set_changes(prev: Package, cur: Package, category: int) -> tuple[list[str], list[str]]:
+    """Меры, которые в редакции cur стали обязательными для категории (по сравнению с prev)
+    и которые перестали быть обязательными."""
+    def base(pkg: Package) -> set[str]:
+        return {m["code"] for m in pkg.data["measures"] if category in m.get("categories", [])}
+    old, new = base(prev), base(cur)
+    return sorted(new - old), sorted(old - new)
+
+
+def requirement_changes(prev: Package, cur: Package) -> dict[str, str]:
+    """Требования приказа № 235, добавленные или изменённые в редакции cur: {код: добавлено|изменено}."""
+    old = {r["id"]: r for r in prev.data["requirements"]}
+    return {r["id"]: ADDED if r["id"] not in old else CHANGED
+            for r in cur.data["requirements"] if r["id"] not in old or old[r["id"]]["text"] != r["text"]}

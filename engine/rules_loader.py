@@ -107,7 +107,8 @@ class RuleBase:
     def editions(self) -> list[str]:
         """Документы и редакции, по которым выполняется оценка (для отчёта)."""
         return [f"{d['act']} ({d['edition']})" for d in
-                (self.categorization["document"], self.measures["document"], self.security["document"])]
+                (self.spheres["document"], self.categorization["document"], self.measures["document"],
+                 self.security["document"])]
 
     def sphere_ids(self) -> set[str]:
         """Идентификаторы сфер из ст. 2 п. 8 187-ФЗ."""

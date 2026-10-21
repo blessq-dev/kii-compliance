@@ -27,7 +27,8 @@ from engine.categorization import categorize
 from engine.dataset import DATA_DIR, implemented_codes, load_objects
 from engine.measures import extract_codes, group_title, required_measures
 from engine.report_docx import card_docx, to_act_docx, to_docx
-from engine.impact import diff_rules, impact_on_objects
+from engine.impact import (ADDED, base_set_changes, diff_rules, impact_on_objects, previous_edition,
+                           requirement_changes)
 from engine.rules_loader import KINDS, RuleBaseError, edition_dates, find_packages, load_rules
 from engine.verification import ERROR, compare_findings, install_package, verify_rules
 from engine.validation import InputError, boundary_note, check_value, condition_error, reference, validate
@@ -900,6 +901,15 @@ with tab3:
         st.progress((len(done_codes) + len(comp_codes)) / applicable if applicable else 1.0,
                     text=f"Закрыто {len(done_codes) + len(comp_codes)} из {applicable} применимых мер"
                          + (f" (не применяются: {len(na_codes)})" if na_codes else ""))
+        # Что изменилось в наборе этой категории по сравнению с предыдущей редакцией приказа № 239
+        meas_pkg = rules.packages["measures"]
+        prev_meas = previous_edition(get_packages(), meas_pkg)
+        new_req, dropped = base_set_changes(prev_meas, meas_pkg, cat.category) if prev_meas else ([], [])
+        if new_req or dropped:
+            st.info(f"**Приказ № 239 {meas_pkg.passport['edition']}** по сравнению с предыдущей редакцией "
+                    f"({prev_meas.passport['edition']}) для {ROMAN[cat.category]} категории: "
+                    f"стали обязательными — {', '.join(new_req) or 'нет'}; перестали быть обязательными — "
+                    f"{', '.join(dropped) or 'нет'}. Новые обязательные меры помечены в списке.")
         show_flash("flash_measures")
         f1, f2, f3 = st.columns([2, 1.2, 2])
         search = f1.text_input("Поиск меры", key="flt_search", placeholder="код или слово, например УПД или журнал")
@@ -966,7 +976,8 @@ with tab3:
                           icon=":material/remove_done:", width="stretch")
                 for m in visible:
                     c = m["code"]
-                    st.checkbox(f"**{c}** — {m['title']}", key=f"m_{c}", on_change=on_measure_check, args=(c,),
+                    tag = f" :blue-badge[обязательна с {meas_pkg.effective_from:%d.%m.%Y}]" if c in new_req else ""
+                    st.checkbox(f"**{c}** — {m['title']}{tag}", key=f"m_{c}", on_change=on_measure_check, args=(c,),
                                 help=m["source"] + (f"\n\n{m['note']}" if m.get("note") else ""))
                     if c in ss.mst:
                         icon = "⚪" if ss.mst[c]["status"] == NOT_APPLICABLE else "🔵"
@@ -997,6 +1008,15 @@ with tab4:
                     "«не применимо».")
         st.progress(len(sec_done) / sec_appl if sec_appl else 1.0,
                     text=f"Выполнено {len(sec_done)} из {sec_appl} применимых требований")
+        sec_pkg = rules.packages["security_system"]
+        prev_sec = previous_edition(get_packages(), sec_pkg)
+        req_changed = requirement_changes(prev_sec, sec_pkg) if prev_sec else {}
+        if req_changed:
+            added = [i for i, w in req_changed.items() if w == ADDED]
+            st.info(f"**Приказ № 235 {sec_pkg.passport['edition']}** по сравнению с предыдущей редакцией "
+                    f"({prev_sec.passport['edition']}): новые требования — {', '.join(added) or 'нет'}; "
+                    f"изменены формулировки — {', '.join(i for i in req_changed if i not in added) or 'нет'}. "
+                    "Они помечены в списке.")
         for section in dict.fromkeys(r["section"] for r in REQS):
             items = [r for r in REQS if r["section"] == section]
             with st.expander(f"{section} · {plural(len(items), ('требование', 'требования', 'требований'))}"):
@@ -1004,7 +1024,10 @@ with tab4:
                 n_appl = len(items) - sum(1 for r in items if ss.get(f"secna_{r['id']}"))
                 st.caption(f"Выполнено {n_done} из {n_appl}")
                 for r in items:
-                    st.checkbox(f"**{r['id']}** — {r['text']}", key=f"sec_{r['id']}", help=r["source"],
+                    what = req_changed.get(r["id"])
+                    tag = (f" :blue-badge[{'новое' if what == ADDED else 'изменено'} с "
+                           f"{sec_pkg.effective_from:%d.%m.%Y}]" if what else "")
+                    st.checkbox(f"**{r['id']}** — {r['text']}{tag}", key=f"sec_{r['id']}", help=r["source"],
                                 on_change=toggle_req, args=(r["id"], "done"))
                     if r.get("condition"):
                         st.checkbox(f"Не применимо (требование действует, только если {r['condition']})",

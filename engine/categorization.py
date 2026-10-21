@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 
 from engine.rules_loader import RuleBase
 
+ROMAN = {1: "I", 2: "II", 3: "III"}  # категории в тексте обоснования — как в ПП № 127
+
 
 @dataclass
 class IndicatorResult:
@@ -130,10 +132,10 @@ def categorize(rules: RuleBase, sphere: str, values: dict) -> CategorizationResu
             value = f" = {r.value:g}".replace(".", ",") if isinstance(r.value, (int, float)) else ""
             result.explanation.append(
                 f"Показатель {r.indicator_id}{value}: «{r.matched_text}» → "
-                f"{r.category} категория ({r.source})."
+                f"{ROMAN[r.category]} категория ({r.source})."
             )
         result.explanation.append(
-            f"Присвоена наивысшая из полученных категорий — {result.category} "
+            f"Присвоена наивысшая из полученных категорий — {ROMAN[result.category]} "
             f"(ПП РФ № 127, Правила, п. 6–7)."
         )
     if result.not_filled:

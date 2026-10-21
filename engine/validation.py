@@ -18,7 +18,7 @@
 import math
 from dataclasses import dataclass, field
 
-from engine.categorization import evaluate_indicator
+from engine.categorization import ROMAN, evaluate_indicator
 from engine.rules_loader import RuleBase
 
 
@@ -146,4 +146,4 @@ def describe(rule: dict, value) -> str:
     res = evaluate_indicator(rule, value)
     if res.category is None:
         return "не соответствует ни одному значению — категория по этому показателю не присваивается"
-    return f"→ {res.category} категория («{res.matched_text}»)"
+    return f"→ {ROMAN[res.category]} категория («{res.matched_text}»)"
