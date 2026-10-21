@@ -82,6 +82,7 @@ pip install -r requirements.txt
 streamlit run app.py        # интерфейс
 pytest                      # тесты
 python experiment.py        # эксперимент: метрики на тестовом наборе и журналы участников
+python experiment_editions.py  # эксперимент: точность выявления изменений между редакциями ПП № 127
 ```
 
 Тесты автоматически запускаются в GitHub Actions при каждом push (`.github/workflows/tests.yml`).

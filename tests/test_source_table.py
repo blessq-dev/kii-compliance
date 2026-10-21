@@ -71,3 +71,14 @@ def test_draft_reproduces_reviewed_package():
             assert i["values"] == final[i["id"]]["values"], i["id"]
     assert [i["id"] for i in draft["indicators"] if i.get("review")] == ["4"]
     assert verify_package(check_package(draft)) == []  # дефекты 2018 г. в ред. 2019 г. устранены
+
+
+def test_editions_experiment():
+    """Эксперимент experiment_editions.py: пометки не видят изменений ред. 2019 г., сверка значений — видит."""
+    import experiment_editions as ex
+    old, new = package("2018-02-08"), package("2019-04-13")
+    expected = ex.truth(old.data, new.data)
+    assert len(expected) == 15 and {"14", "9а", "4"} <= expected
+    assert ex.by_values(old, ROOT / "docs" / TEXTS["2019-04-13"]) == expected
+    from engine.source_text import read_paragraphs
+    assert ex.by_marks(old, new, read_paragraphs(ROOT / "docs" / TEXTS["2019-04-13"])) == set()
