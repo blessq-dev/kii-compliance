@@ -612,9 +612,9 @@ def render_text_check():
                                    for m in mismatches]), hide_index=True, width="stretch")
     if not items:
         if not mismatches:
-            st.success(f"Пакет правил соответствует тексту: изменений после {pkg.effective_from:%d.%m.%Y} нет, "
-                       + ("значения всех показателей совпадают." if kind == "categorization" else
-                          "пометок об изменениях нет."))
+            st.success(f"Пакет правил соответствует тексту: пометок об изменениях позже "
+                       f"{pkg.effective_from:%d.%m.%Y} нет"
+                       + (", значения всех показателей совпадают." if kind == "categorization" else "."))
         return
     touched = sorted({r for i in items for r in i.rules})
     no_rule = [i for i in items if not i.rules]
