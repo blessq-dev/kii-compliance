@@ -120,10 +120,11 @@ def categorize(rules: RuleBase, sphere: str, values: dict) -> CategorizationResu
     filled = {r.indicator_id for r in result.details}
     result.not_filled = [i["id"] for i in rules.categorization["indicators"] if i["id"] not in filled]
 
+    no_category = logic_source(rules, "no_category")
     if result.category is None:
         result.explanation.append(
             "Объект не соответствует ни одному значению показателей (или показатели неприменимы) — "
-            "категория значимости не присваивается (ПП РФ № 127, Правила, п. 6, абз. 3)."
+            f"категория значимости не присваивается ({no_category})."
         )
     else:
         result.decisive = [r for r in result.details if r.category == result.category]
@@ -141,7 +142,16 @@ def categorize(rules: RuleBase, sphere: str, values: dict) -> CategorizationResu
     if result.not_filled:
         result.explanation.append(
             f"Не заполнены и считаются неприменимыми к объекту ({len(result.not_filled)} из "
-            f"{len(rules.categorization['indicators'])}): {', '.join(result.not_filled)} "
-            "(ПП РФ № 127, Правила, п. 6, абз. 3)."
+            f"{len(rules.categorization['indicators'])}): {', '.join(result.not_filled)} ({no_category})."
         )
     return result
+
+
+def logic_source(rules: RuleBase, logic_id: str) -> str:
+    """Ссылка на общее правило категорирования из раздела logic пакета ПП № 127.
+
+    Номера абзацев меняются между редакциями (например, «категория не присваивается» —
+    п. 6, абз. 3 в исходной редакции и абз. 4 в последующих), поэтому ссылка берётся из пакета.
+    """
+    return next((item["source"] for item in rules.categorization.get("logic", []) if item["id"] == logic_id),
+                "ПП РФ № 127, Правила категорирования, п. 6")

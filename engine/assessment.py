@@ -29,7 +29,7 @@
 import re
 from dataclasses import dataclass, field
 
-from engine.categorization import CategorizationResult, categorize
+from engine.categorization import CategorizationResult, categorize, logic_source
 from engine.measures import extract_codes, group_title, required_measures
 from engine.rules_loader import RuleBase
 from engine.security_system import SecurityResult, assess_security
@@ -240,7 +240,7 @@ def assess(rules: RuleBase, object_name: str, sphere: str, indicator_values: dic
 
     if cat.is_kii_subject and not cat.details:
         report.notices.append("Ни один показатель значимости не заполнен — все они считаются неприменимыми к объекту "
-                              "(ПП РФ № 127, Правила, п. 6, абз. 3). Если показатель применим, но не заполнен, "
+                              f"({logic_source(rules, 'no_category')}). Если показатель применим, но не заполнен, "
                               "категория будет занижена.")
     report.warnings += _verifier_notes(rules, [r.indicator_id for r in cat.details], cat.category is not None)
     if cat.category is not None:

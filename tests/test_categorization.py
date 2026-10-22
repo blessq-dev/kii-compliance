@@ -246,3 +246,10 @@ def test_2018_warnings_for_anomalous_indicators(rules_2018):
     res = categorize(rules_2018, "healthcare", {"5": 6, "1": 5})
     assert any(w.startswith("Показатель 5:") for w in res.warnings)
     assert cat(rules_2018, {"5": 6, "1": 5}) == 3
+
+
+def test_no_category_reference_follows_edition(rules, rules_2018):
+    """«Категория не присваивается» — п. 6, абз. 3 в исходной редакции и абз. 4 в действующей:
+    ссылка в обосновании берётся из пакета правил, а не из кода."""
+    assert any("п. 6, абз. 4" in e for e in categorize(rules, "science", {}).explanation)
+    assert any("п. 6, абз. 3" in e for e in categorize(rules_2018, "science", {}).explanation)
