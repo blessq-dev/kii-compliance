@@ -442,11 +442,19 @@ def current_attributes() -> dict:
     return attrs
 
 
+NA = "na"  # вариант «Неприменимо» у перечислимых показателей (None Streamlit считает «ничего не выбрано»)
+
+
+def ind_value(ind_id: str):
+    """Значение показателя из формы; None — показатель не задан или отмечен «Неприменимо»."""
+    v = ss.get(f"ind_{ind_id}")
+    return None if v == NA else v
+
+
 def current_state() -> dict:
     """Текущие данные формы — для сохранения в файл, перечня объектов и сверки с отчётом."""
     return {"object_name": ss.object_name, "sphere": ss.sphere,
-            "indicators": {i["id"]: ss[f"ind_{i['id']}"] for i in INDICATORS
-                           if ss.get(f"ind_{i['id']}") is not None},
+            "indicators": {i["id"]: ind_value(i["id"]) for i in INDICATORS if ind_value(i["id"]) is not None},
             "implemented": [c for c in ALL_CODES if ss.get(f"m_{c}")],
             "statuses": dict(ss.mst), "details": {c: d for c, d in ss.mdet.items() if d.get("means") or d.get("due")},
             "attributes": current_attributes(),
@@ -634,7 +642,7 @@ ss.setdefault("mdet", {})
 
 # ---------------- расчёт по текущим данным (до отрисовки) ----------------
 
-raw_values = {i["id"]: ss[f"ind_{i['id']}"] for i in INDICATORS if ss.get(f"ind_{i['id']}") is not None}
+raw_values = {i["id"]: ind_value(i["id"]) for i in INDICATORS if ind_value(i["id"]) is not None}
 attributes = current_attributes()
 validation = validate(rules, raw_values, attributes)
 values = {k: v for k, v in raw_values.items() if k not in validation.errors}
@@ -889,7 +897,7 @@ with tab2:
             # Условный показатель без подтверждённого условия скрыт (если значение уже введено —
             # остаётся видимым, чтобы можно было исправить ошибку).
             hidden = [i["id"] for i in items if i.get("applies_if") and not attributes.get(i["applies_if"])
-                      and ss.get(f"ind_{i['id']}") is None]
+                      and ind_value(i["id"]) is None]
             if hidden:
                 st.caption(f"Скрыто условных показателей: {len(hidden)} ({', '.join(hidden)}) — "
                            "условие выше не отмечено.")
@@ -906,10 +914,10 @@ with tab2:
                         head.number_input(f"Значение, {ind['unit']}", step=1.0, format="%g", key=key,
                                           help=tip, placeholder="не применимо", **default)
                     else:
-                        head.radio("Значение", [None] + [o["id"] for o in ind["options"]], key=key, help=tip,
-                                   format_func=lambda v, ind=ind: "Неприменимо" if v is None
+                        head.radio("Значение", [NA] + [o["id"] for o in ind["options"]], key=key, help=tip,
+                                   format_func=lambda v, ind=ind: "Неприменимо" if v == NA
                                    else next(o["text"] for o in ind["options"] if o["id"] == v))
-                    value = ss.get(key)
+                    value = ind_value(ind["id"])
                     errs, warns = check_value(ind, value) if value is not None else ([], [])
                     if value is not None and condition_error(rules, ind, attributes):
                         errs.append(condition_error(rules, ind, attributes))

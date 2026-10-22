@@ -120,6 +120,16 @@ def test_choice_indicator(app):
     assert summary_category(app) == "cat1"
 
 
+def test_choice_indicator_not_applicable_stays_selected(app):
+    """«Неприменимо» остаётся выбранным и снимает категорию по показателю (раньше выбор сбрасывался)."""
+    assert app.radio(key="ind_2а").value == "na"  # по умолчанию выбрано «Неприменимо»
+    app.radio(key="ind_2а").set_value("federal").run()
+    app.radio(key="ind_2а").set_value("na").run()
+    radio = app.radio(key="ind_2а")
+    assert radio.value == "na" and radio.index == 0
+    assert summary_category(app) != "cat1"
+
+
 def test_fix_error_unblocks_report(app):
     app.number_input(key="ind_1").set_value(-5).run()
     assert button(app, "Сформировать отчёт").disabled
