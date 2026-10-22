@@ -5,9 +5,14 @@
               (добавлены, исключены, изменены значения, варианты, тип или условие применимости;
               пакеты составлены и проверены экспертом, их совпадение с текстом проверено тестом);
   - метод 1 — пометки «в ред.» / «введен» / «утратил силу» в тексте новой редакции (engine/source_text.py):
-              показатели, источник которых указывает на изменённый пункт;
+              показатели ПРЕЖНЕГО пакета, источник которых указывает на изменённый пункт. Так метод работает
+              на практике: при выходе новой редакции пакета для неё ещё нет. Изменённые пункты без правил
+              в прежнем пакете (например, новые пункты) показателями не являются и в полноту не входят —
+              их число выводится отдельно;
+  - метод 1′ — то же, но связь ищется и по новому пакету (апостериорная проверка уже составленного
+              пакета; на практике недоступна до его составления — приводится для сравнения);
   - метод 2 — сверка значений таблицы Перечня новой редакции с прежним пакетом (engine/source_table.py);
-  - методы 1 + 2 — объединение.
+  - методы 1 + 2 — объединение (метод 1 — по прежнему пакету).
 Метрики: TP, FP, FN, полнота (recall) и точность (precision) по показателям.
 
 Запуск: python experiment_editions.py  — таблица в консоли и data/results/editions_<дата>.csv
@@ -48,14 +53,22 @@ def _norm(value, field: str):
     return value
 
 
-def by_marks(old_pkg, new_pkg, paragraphs) -> set[str]:
-    """Метод 1: показатели прежнего и нового пакета, основанные на пунктах с пометками после даты прежнего."""
-    indicators = {i["id"] for p in (old_pkg, new_pkg) for i in p.data["indicators"]}
+def by_marks(old_pkg, paragraphs, new_pkg=None) -> set[str]:
+    """Метод 1: показатели прежнего пакета, основанные на пунктах с пометками после даты прежнего пакета.
+    С new_pkg (метод 1′) — также показатели нового пакета, основанные на этих пунктах."""
+    packages = [old_pkg] + ([new_pkg] if new_pkg else [])
+    indicators = {i["id"] for p in packages for i in p.data["indicators"]}
     found = set()
-    for pkg in (old_pkg, new_pkg):
+    for pkg in packages:
         for item in stale_rules(pkg.data, old_pkg.effective_from, paragraphs):
             found |= {r for r in item.rules if r in indicators}
     return found
+
+
+def unmapped_places(old_pkg, paragraphs) -> list[str]:
+    """Изменённые пункты Перечня, для которых в прежнем пакете нет правил (новые пункты и т. п.)."""
+    return [i.place for i in stale_rules(old_pkg.data, old_pkg.effective_from, paragraphs)
+            if not i.rules and i.place.startswith("Перечень")]
 
 
 def by_values(old_pkg, path) -> set[str]:
@@ -70,20 +83,26 @@ def main() -> None:
         new_pkg = read_package(ROOT / "rules" / "pp-127" / f"{new_ed}.yaml")
         path = ROOT / "docs" / text
         expected = truth(old_pkg.data, new_pkg.data)
-        marks, values = by_marks(old_pkg, new_pkg, read_paragraphs(path)), by_values(old_pkg, path)
-        for method, found in (("пометки «в ред.»", marks), ("сверка значений", values),
-                              ("пометки + значения", marks | values)):
+        paragraphs = read_paragraphs(path)
+        marks, values = by_marks(old_pkg, paragraphs), by_values(old_pkg, path)
+        unmapped = unmapped_places(old_pkg, paragraphs)
+        for method, found in (("1: пометки (прежний пакет)", marks),
+                              ("1′: пометки (+ новый пакет)", by_marks(old_pkg, paragraphs, new_pkg)),
+                              ("2: сверка значений", values), ("1 + 2", marks | values)):
             c = Counts()
             c.add(expected, found)
             rows.append({"редакции": f"{old_ed} → {new_ed}", "метод": method, "изменено (эталон)": len(expected),
                          "TP": c.tp, "FP": c.fp, "FN": c.fn, "полнота": round(c.recall, 3),
                          "точность": round(c.precision, 3),
-                         "пропущены": ", ".join(sorted(expected - found)), "лишние": ", ".join(sorted(found - expected))})
+                         "пропущены": ", ".join(sorted(expected - found)), "лишние": ", ".join(sorted(found - expected)),
+                         "пунктов без правил": len(unmapped) if method.startswith("1:") else ""})
 
-    print(f"{'редакции':26} {'метод':20} {'эталон':>6} {'TP':>3} {'FP':>3} {'FN':>3} {'полнота':>8} {'точность':>8}")
+    print(f"{'редакции':26} {'метод':28} {'эталон':>6} {'TP':>3} {'FP':>3} {'FN':>3} {'полнота':>8} {'точность':>8}")
     for r in rows:
-        print(f"{r['редакции']:26} {r['метод']:20} {r['изменено (эталон)']:>6} {r['TP']:>3} {r['FP']:>3} {r['FN']:>3} "
-              f"{r['полнота']:>8} {r['точность']:>8}" + (f"  пропущены: {r['пропущены']}" if r["пропущены"] else ""))
+        print(f"{r['редакции']:26} {r['метод']:28} {r['изменено (эталон)']:>6} {r['TP']:>3} {r['FP']:>3} {r['FN']:>3} "
+              f"{r['полнота']:>8} {r['точность']:>8}" + (f"  пропущены: {r['пропущены']}" if r["пропущены"] else "")
+              + (f"  [изменённых пунктов без правил в прежнем пакете: {r['пунктов без правил']}]"
+                 if r["пунктов без правил"] else ""))
     out = USER_DIR / "results" / f"editions_{datetime.now():%Y%m%d_%H%M%S}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", newline="", encoding="utf-8-sig") as f:

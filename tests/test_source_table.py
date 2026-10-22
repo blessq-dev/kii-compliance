@@ -81,4 +81,5 @@ def test_editions_experiment():
     assert len(expected) == 15 and {"14", "9а", "4"} <= expected
     assert ex.by_values(old, ROOT / "docs" / TEXTS["2019-04-13"]) == expected
     from engine.source_text import read_paragraphs
-    assert ex.by_marks(old, new, read_paragraphs(ROOT / "docs" / TEXTS["2019-04-13"])) == set()
+    paragraphs = read_paragraphs(ROOT / "docs" / TEXTS["2019-04-13"])
+    assert ex.by_marks(old, paragraphs) == set() and ex.by_marks(old, paragraphs, new) == set()
