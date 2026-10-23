@@ -12,3 +12,7 @@ data/results/sessions.csv
 build/
 dist/
 *.spec
+
+# Учебные материалы и текст ВКР — только локально, не публикуются
+pz nir/
+vkr/
